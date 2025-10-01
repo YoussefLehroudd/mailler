@@ -1,5 +1,5 @@
 {
-    "name": "mailer-app",
+    "name": "myapp/mailer",
     "description": "PHP Mailer Application",
     "type": "project",
     "require": {
