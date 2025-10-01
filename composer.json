@@ -1,0 +1,9 @@
+{
+    "name": "mailer-app",
+    "description": "PHP Mailer Application",
+    "type": "project",
+    "require": {
+        "php": ">=7.0"
+    },
+    "license": "proprietary"
+}
