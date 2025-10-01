@@ -64,37 +64,266 @@ if(!empty($_POST))
 	$repaslog=true;
 }
 ?>
-<html>
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<title>PHP Mailer</title>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<script
-			  src="https://code.jquery.com/jquery-3.1.1.min.js"
-			  integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8="
-			  crossorigin="anonymous"></script>
-<style type="text/css">
-#more {display: none;}
-<!--
-.style1 {
-        font-family: Geneva, Arial, Helvetica, sans-serif;
-        font-size: 12px;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📧 PHP Mailer Pro</title>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
--->
-</style>
-<style type="text/css">
-<!--
-.style1 {
-        font-size: 10px;
-        font-family: Geneva, Arial, Helvetica, sans-serif;
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 15px;
 }
--->
-.td1 { 
-	width:150px;
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    overflow: hidden;
+}
+
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 25px;
+    text-align: center;
+}
+
+.header h1 {
+    font-size: 2em;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.header p {
+    font-size: 1em;
+    opacity: 0.95;
+}
+
+.content {
+    padding: 25px;
+}
+
+.section {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid #e9ecef;
+}
+
+.section-title {
+    font-size: 1.2em;
+    color: #667eea;
+    margin-bottom: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-group label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.9em;
+}
+
+.form-group input[type="text"],
+.form-group input[type="password"],
+.form-group input[type="number"],
+.form-group input[type="file"],
+.form-group select,
+.form-group textarea {
+    padding: 10px 12px;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    font-size: 0.95em;
+    transition: all 0.2s ease;
+    background: white;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group textarea {
+    min-height: 120px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.checkbox-inline input[type="checkbox"],
+.checkbox-inline input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.checkbox-inline label {
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.9em;
+}
+
+.btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+    font-size: 1.05em;
+    padding: 12px 32px;
+}
+
+.btn-success:hover {
+    background: #218838;
+    transform: translateY(-2px);
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.smtp-display {
+    background: #2d3748;
+    color: #a0aec0;
+    padding: 12px;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+    min-height: 80px;
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.info-box {
+    background: #e7f3ff;
+    color: #1976D2;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 0.9em;
+    margin: 15px 0;
+    border-left: 4px solid #2196F3;
+}
+
+.help-box {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.help-box h4 {
+    color: #856404;
+    margin-bottom: 10px;
+}
+
+.help-box code {
+    background: rgba(255, 193, 7, 0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    color: #856404;
+    font-weight: 600;
+}
+
+#more {
+    display: none;
+    margin-top: 10px;
+}
+
+.footer {
+    text-align: center;
+    padding: 15px;
+    background: #f8f9fa;
+    color: #6c757d;
+    font-size: 0.85em;
+}
+
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+    .header h1 {
+        font-size: 1.5em;
+    }
+}
+
+.td1 {
+    width: 150px;
 }
 </style>
 </head>
-<body text="#000000">
+<body>
 <script>
 function readmore() {
   var dots = document.getElementById("dots");
@@ -553,7 +782,7 @@ $(document).ready(function(){
 		</ul>
 	</span>
 </div>
-<?php print "<p class=\"style1\">PHP Mailer &copy ".date("Y").", <b><font color=\"#800000\">BY LuFix.to</font><span style=\"color:red\">&nbsp;&nbsp;Site: LuFix.to<br></span></b></p>"; ?>
+<?php print "<p class=\"style1\">PHP Mailer &copy ".date("Y").", <b><font color=\"#800000\">BY Youssef</font><span style=\"color:red\">&nbsp;&nbsp;<br></span></b></p>"; ?>
     </body>
 </html>
 
