@@ -1,5 +1,10 @@
 <?php
-error_reporting(0);
+// Enable error reporting for debugging
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// Set unlimited execution time for long-running email operations
 set_time_limit(0);
 
 function randString($consonants) {
@@ -61,24 +66,24 @@ $repaslog=false;
 $uploadfile="";
 
 if(!empty($_POST)) {	  
-    $debg=lrtrim($_POST['dbg']);
+    $debg = isset($_POST['dbg']) ? lrtrim($_POST['dbg']) : '0';
     if(!empty($_POST['from'])) {
         $from=lrtrim($_POST['from']);
         $from_base =$from;
     }
-    $action=lrtrim($_POST['action']);
-    $message=lrtrim($_POST['message']);
-    $message_base=lrtrim($_POST['message']);
-    $emaillist=lrtrim($_POST['emaillist']);
-    $reconnect=lrtrim($_POST['reconnect']);
-    $epriority=lrtrim($_POST['epriority']);
-    $my_smtp=lrtrim($_POST['my_smtp']);
-    $subject=lrtrim($_POST['subject']);
-    $realname=lrtrim($_POST['realname']);
-    $subject_base=lrtrim($_POST['subject']);
-    $realname_base=lrtrim($_POST['realname']);
-    $contenttype=lrtrim($_POST['contenttype']);
-    $encodety=$_POST['encodety'];
+    $action = isset($_POST['action']) ? lrtrim($_POST['action']) : '';
+    $message = isset($_POST['message']) ? lrtrim($_POST['message']) : '';
+    $message_base = isset($_POST['message']) ? lrtrim($_POST['message']) : 'Message Here';
+    $emaillist = isset($_POST['emaillist']) ? lrtrim($_POST['emaillist']) : 'your_email@yahoo.com';
+    $reconnect = isset($_POST['reconnect']) ? lrtrim($_POST['reconnect']) : '0';
+    $epriority = isset($_POST['epriority']) ? lrtrim($_POST['epriority']) : '';
+    $my_smtp = isset($_POST['my_smtp']) ? lrtrim($_POST['my_smtp']) : '';
+    $subject = isset($_POST['subject']) ? lrtrim($_POST['subject']) : 'Subject Here';
+    $realname = isset($_POST['realname']) ? lrtrim($_POST['realname']) : 'Support';
+    $subject_base = isset($_POST['subject']) ? lrtrim($_POST['subject']) : 'Subject Here';
+    $realname_base = isset($_POST['realname']) ? lrtrim($_POST['realname']) : 'Support';
+    $contenttype = isset($_POST['contenttype']) ? lrtrim($_POST['contenttype']) : '';
+    $encodety = isset($_POST['encodety']) ? $_POST['encodety'] : 'no';
     if(!empty($_POST['pause']))
         $pause=$_POST['pause'];
     if(!empty($_POST['replyto']))
@@ -91,7 +96,15 @@ if(!empty($_POST)) {
         $lase=true;
     if(!empty($_POST['nbcc']))
         $nbcc=lrtrim($_POST['nbcc']);
-    $allsmtps =  preg_split("/\\r\\n|\\r|\\n/", $my_smtp);
+    $allsmtps_raw =  preg_split("/\\r\\n|\\r|\\n/", $my_smtp);
+    // Clean up SMTP list - remove empty lines
+    $allsmtps = array();
+    foreach($allsmtps_raw as $smtp) {
+        $smtp = trim($smtp);
+        if(!empty($smtp)) {
+            $allsmtps[] = $smtp;
+        }
+    }
     if(!empty($_POST['readingconf']))
         $reading=true;
     if(!empty($_POST['repaslog']))
@@ -5028,36 +5041,40 @@ function switch_smtp()
 	global $mail;
 	global $isbcc;
 	global $from;
+	global $from_base;
 	global $lase;
 	global $replyto;
 	global $reading;
 	global $repaslog;
 	if(count($allsmtps) > $curentsmtp)
 	{
-		$smtprot = explode(':',$allsmtps[$curentsmtp]);
-		if(count($smtprot) > 0)
+		$smtprot = explode('|',$allsmtps[$curentsmtp]);
+		if(count($smtprot) >= 4)
 		{
-			$mail->Host = $smtprot[0];
-			$mail->Port = $smtprot[1];
-			$mail->Username = $smtprot[2];
-			$mail->Password = $smtprot[3];
-			if($reading && $repaslog)
+			$mail->Host = isset($smtprot[0]) ? $smtprot[0] : '';
+			$mail->Port = isset($smtprot[1]) ? $smtprot[1] : 587;
+			$mail->Username = isset($smtprot[2]) ? $smtprot[2] : '';
+			$mail->Password = isset($smtprot[3]) ? $smtprot[3] : '';
+			
+			if($reading && $repaslog && isset($smtprot[2]))
 				$replyto = $smtprot[2];
-			if($lase)
+			if($lase && isset($smtprot[2]))
 			{
 				$from = $smtprot[2];
 				$from_base = $smtprot[2];
 			}
 	
-			if($smtprot[4] =="SSL")
-			$mail->SMTPSecure  = "ssl"; //you can change it to ssl or tls
-			else if($smtprot[4] =="TLS")
+			if(isset($smtprot[4]) && $smtprot[4] =="SSL")
+				$mail->SMTPSecure  = "ssl";
+			else if(isset($smtprot[4]) && $smtprot[4] =="TLS")
 				$mail->SMTPSecure  = "tls";
-			else if($smtprot[4] =="NON")
+			else if(isset($smtprot[4]) && $smtprot[4] =="NON")
 				$mail->SMTPSecure  = "";
-			if($smtprot[5] =="BCC")
-			$isbcc = true;
-			else $isbcc = false;
+			
+			if(isset($smtprot[5]) && $smtprot[5] =="BCC")
+				$isbcc = true;
+			else 
+				$isbcc = false;
 			
 		}
 	}
@@ -5073,10 +5090,28 @@ function switch_smtp()
 		}
 		else
 		{
-			$allemails =  preg_split("/\\r\\n|\\r|\\n/", $emaillist);
+			// Split emails and clean up - remove only empty lines
+			$allemails_raw =  preg_split("/\\r\\n|\\r|\\n/", $emaillist);
+			$allemails = array();
+			
+			// Remove only empty lines and invalid emails (keep duplicates)
+			foreach($allemails_raw as $email) {
+				$email = trim($email);
+				// Skip empty lines
+				if(empty($email)) {
+					continue;
+				}
+				// Skip invalid emails (must contain @)
+				if(strpos($email, '@') === false) {
+					continue;
+				}
+				$allemails[] = $email;
+			}
+			
 			$numemails = count($allemails);
 			$nq=0;
-			$qx=0;
+			$qx=1;
+			$rotation_counter=0; // Counter for SMTP rotation
 			
 			if(!empty($epriority))
 				$mail->Priority = "$epriority";
@@ -5125,8 +5160,35 @@ function switch_smtp()
 					$mail->addAttachment($uploadfile,$_FILES['userfile']['name']);
 				}
 			}
+			// Create session for stop functionality
+			if (session_status() == PHP_SESSION_NONE) {
+				session_start();
+			}
+			$stop_file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mailer_stop_' . session_id();
+			// Remove old stop file if exists
+			if(file_exists($stop_file)) {
+				unlink($stop_file);
+			}
+			echo "<!-- DEBUG: Stop file path: $stop_file -->";
+			if (ob_get_level()) ob_flush();
+			flush();
+			
+			// Initialize stop flag
+			$stopSending = false;
+			
 			for($x=1; $x<=$numemails; $x++)
 			{
+				// ⛔ CHECK STOP FLAG - DÉBUT DE BOUCLE
+				clearstatcache(true, $stop_file);
+				if(file_exists($stop_file)) {
+					$stopSending = true;
+					echo "<br><br><p style='color:#dc3545; font-weight:bold; font-size:16px;'>⛔ ARRÊT IMMÉDIAT DEMANDÉ PAR L'UTILISATEUR!</p>";
+					if (ob_get_level()) ob_flush();
+					flush();
+					@unlink($stop_file);
+					break;
+				}
+				
 				// BCC EMAIL COUNT
 				if($isbcc && $x % intval($nbcc) == 0)
 				{
@@ -5153,7 +5215,8 @@ function switch_smtp()
 					if($x % intval($nbcc)  != 0 && $x <= $numemails)
 					{
 						$mail->addBCC("$to");
-						print "<span style=\"color:red;\">Line $qx </span> : Sending mail to $to<br>";
+						print "<span style=\"color:red;\">Line $x </span> : Sending mail to $to<br>";
+						if (ob_get_level()) ob_flush();
 						flush();
 						if($x % intval($nbcc) != 0 && $x == $numemails)
 							$send=true;
@@ -5161,20 +5224,20 @@ function switch_smtp()
 					else
 					{
 						$mail->addBCC("$to");
-						print "<span style=\"color:red;\">Line $qx </span> : Sending mail to $to<br>";
+						print "<span style=\"color:red;\">Line $x </span> : Sending mail to $to<br>";
+						if (ob_get_level()) ob_flush();
 						flush();
 						$send = true;
 					}
-					$qx=$x;
 				}
 				else 
 				{
 					$mail->clearAddresses();
 					$mail->AddAddress("$to");
 					$send=true;
-					print "<span style=\"color:red;\">Line $qx </span> : Sending mail to $to.......";
+					print "<span style=\"color:red;\">Line $x </span> : Sending mail to $to.......";
+					if (ob_get_level()) ob_flush();
 					flush();
-					$qx=$x;
 				}
 				//END//
 				if($send)
@@ -5210,38 +5273,58 @@ function switch_smtp()
 						$realname = "=?UTF-8?B?".base64_encode($realname)."?=";
 					}
 
-					$mail->FromName = "$realname";
-					$mail->Subject = "$subject";
-					$mail->Body = "$message";
-					$mail->AltBody = strip_tags_content($message);
-					// SENDING AND TESTING
-					if(!$mail->Send())
+				$mail->FromName = "$realname";
+				$mail->Subject = "$subject";
+				$mail->Body = "$message";
+				$mail->AltBody = strip_tags_content($message);
+				
+				// SENDING AND TESTING
+				if(!$mail->Send())
 						{
 							if($default_system != "1")
 							{
-								echo "FAILED !!<font color=\"#D4001A\"> [RECEPIENT CAN'T RECEIVE MESSAGE.]</font><br>";
+								echo "<b style=\"color:#D4001A;\">FAILED !!</b> [RECEPIENT CAN'T RECEIVE MESSAGE.]<br>";
+								if (ob_get_level()) ob_flush();
+								flush();
 							}
 							if($default_system  == "1")
 							{
 								$mail->IsMail();
 								if(!$mail->Send())
 								{
-									echo "FAILED !!<font color=\"#D4001A\"> [RECEPIENT CAN'T RECEIVE MESSAGE.]</font><br>";
+									echo "<b style=\"color:#D4001A;\">FAILED !!</b> [RECEPIENT CAN'T RECEIVE MESSAGE.]<br>";
+									if (ob_get_level()) ob_flush();
+									flush();
 								}
 								else 
 								{
 									if($isbcc)
-										echo "# BCC EMAIL NUMERO <span style=\"color:red;\">NUMERO $nm </span> SEND :<b>OK</b><br>";
-									else echo "<b>OK</b><br>";
+										echo "# BCC EMAIL NUMERO <span style=\"color:red;\">NUMERO $nm </span> SEND :<b style=\"color:#28a745;\">OK</b><br>";
+									else echo "<b style=\"color:#28a745;\">OK</b><br>";
+									if (ob_get_level()) ob_flush();
+									flush();
 								}
 							}
 						}
 						else 
 						{
 							if($isbcc)
-										echo "# BCC EMAIL <span style=\"color:red;\">NUMERO $nm </span> SEND :<b>OK</b><br>";
-									else echo "<b>OK</b><br>";
+								echo "# BCC EMAIL <span style=\"color:red;\">NUMERO $nm </span> SEND :<b style=\"color:#28a745;\">OK</b><br>";
+							else echo "<b style=\"color:#28a745;\">OK</b><br>";
+							if (ob_get_level()) ob_flush();
+							flush();
 						}
+						
+                                                // ⛔ CHECK STOP FLAG - APRÈS ENVOI
+                                                clearstatcache(true, $stop_file);
+                                                if(file_exists($stop_file)) {
+                                                        $stopSending = true;
+                                                        echo "<br><br><p style='color:#dc3545; font-weight:bold; font-size:16px;'>⛔ ARRÊT IMMÉDIAT DEMANDÉ PAR L'UTILISATEUR!</p>";
+                                                        if (ob_get_level()) ob_flush();
+                                                        flush();
+                                                        @unlink($stop_file);
+                                                        break;
+                                                }
 						if($reconnect >0 && $reconnect==$nq && !(intval($nrotat) > 0 && count($allsmtps) > 1))
 						{
 							$mail->SmtpClose();
@@ -5249,6 +5332,7 @@ function switch_smtp()
 							$nq=0;
 						}
 						$nq=$nq+1;
+						if (ob_get_level()) ob_flush();
 						flush();
 						if($isbcc)
 						$mail->clearBCCs();
@@ -5256,30 +5340,50 @@ function switch_smtp()
 				//END//
 				
 				// SMTP IP ROTATION  NB: 1 BCC = 1 EMAIL
-					if(intval($nrotat) > 0 && count($allsmtps) > 1)
+					if(intval($nrotat) > 0 && count($allsmtps) > 1 && $send)
 					{
-						$curentsmtp += 1;
-						$nq=0;
-						$mail->SmtpClose();
-						switch_smtp();
+						$rotation_counter++;
+						$should_rotate = false;
+						
 						if($isbcc)
 						{
 							if($nm > 0 && $nm % intval($nrotat) == 0 && $canrotat && $x < $numemails)
 							{
-								echo "\n<br><span style=\"color:red;\">##############</span><b>  ROTATE TO SMTP ".($curentsmtp+1)." IP: ".$mail->Host."</b><span style=\"color:red;\"> ##############</span><br><br>\n";
-								
+								$should_rotate = true;
 							}
 						}
-						else if ($x % intval($nrotat)==0 && $x < $numemails)
+						else if ($rotation_counter % intval($nrotat)==0 && $x < $numemails)
 						{
-							if($x >= intval($nrotat))
-							echo "\n<br><span style=\"color:red;\">##############</span><b>  ROTATE TO SMTP ".($curentsmtp+1)." IP: ".$mail->Host."</b><span style=\"color:red;\"> ##############</span><br><br>\n\n";
-						}
-						if($curentsmtp >= count($allsmtps))
-						{
-							$curentsmtp=0;
+							if($rotation_counter >= intval($nrotat))
+							{
+								$should_rotate = true;
+							}
 						}
 						
+						if($should_rotate)
+						{
+							$curentsmtp += 1;
+							if($curentsmtp >= count($allsmtps))
+							{
+								$curentsmtp=0;
+							}
+							$nq=0;
+							$rotation_counter=0; // Reset rotation counter
+							$mail->SmtpClose();
+							switch_smtp();
+							
+							// Update From address after switch (in case it changed)
+							$mail->From = $from;
+							
+							// Reconnect to new SMTP server
+							if(!$mail->smtpConnect($mail->SMTPOptions)) {
+								echo "<br><span style=\"color:#dc3545;\">Failed to connect to SMTP ".($curentsmtp+1)."</span><br>";
+							} else {
+								echo "\n<br><span style=\"color:red;\">##############</span><b>  ROTATE TO SMTP ".($curentsmtp+1)." IP: ".$mail->Host."</b><span style=\"color:red;\"> ##############</span><br><br>\n";
+							}
+							if (ob_get_level()) ob_flush();
+							flush();
+						}
 					}
 					//END//
 				

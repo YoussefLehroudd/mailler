@@ -1,12 +1,34 @@
 <?php
-// Start output buffering to capture results
-ob_start();
+// Initialize default variables
+$message_base = "Message Here";
+$action = "";
+$emaillist = "your_email@yahoo.com";
+$ssl_port = "587";
+$my_smtp = "";
+$nrotat = "0";
+$reconnect = "0";
+$isbcc = "";
+$nbcc = "50";
+$pause = "0";
+$pemails = "0";
+$from_base = "";
+$realname_base = "Support";
+$lase = true;
+$replyto = "";
+$repaslog = true;
+$reading = false;
+$epriority = "";
+$subject_base = "Subject Here";
+$encodety = "no";
 
-// Include all backend code
-include 'backend.php';
-
-// Get the output
-$output = ob_get_clean();
+// Include backend code only when sending
+$output = '';
+if(!empty($_POST['action']) && $_POST['action'] == 'send') {
+    // Capture output for display in result section
+    ob_start();
+    include 'backend.php';
+    $output = ob_get_clean();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -373,7 +395,12 @@ $output = ob_get_clean();
                                     SMTP Host | Port | Username | Password | Security | IsBcc
                                 </div>
                                 <textarea name="my_smtp" id="my_smtp" class="form-control" style="border-radius: 0 0 4px 4px; border-top: none; min-height: 100px; max-height: 150px; font-family: monospace; font-size: 12px; resize: vertical;"><?php echo $my_smtp;?></textarea>
-                                <button type="button" class="btn btn-info" id="reset" style="margin-top: 8px;">Reset</button>
+                                <div style="margin-top: 5px; display: flex; gap: 8px; align-items: center;">
+                                    <button type="button" class="btn btn-info" id="reset">Reset</button>
+                                    <button type="button" class="btn btn-info" id="countSmtp" style="font-size: 12px; padding: 4px 8px;">
+                                        <span id="smtpCount">0</span>
+                                    </button>
+                                </div>
                             </div>
                             
                             <div class="form-group">
@@ -473,7 +500,7 @@ $output = ob_get_clean();
                             </div>
                             
                             <div class="form-group">
-                                <button type="submit" class="btn btn-success" id="sendBtn">Send message</button>
+                                <button type="button" class="btn btn-success" id="sendBtn">Send message</button>
                                 <button type="button" class="btn btn-danger" id="stopBtn" disabled>Stop sending</button>
                             </div>
                         </div>
@@ -512,7 +539,50 @@ $output = ob_get_clean();
                                             <option value="quoted-printable" <?php if($encodety == "quoted-printable"){print "selected";} ?>>Quoted-Printable</option>
                                         </select>
                                         <select name="charset" class="form-control">
-                                            <option>NO CHARSET</option>
+                                            <option value="">NO CHARSET</option>
+                                            <option value="utf-8">Unicode -> utf-8</option>
+                                            <option value="utf-7">Unicode -> utf-7</option>
+                                            <option value="us-ascii">Unicode -> us-ascii</option>
+                                            <option value="iso-10646-ucs-2">Unicode -> iso-10646-ucs-2</option>
+                                            <option value="iso-8859-6">Arabic -> iso-8859-6</option>
+                                            <option value="x-mac-arabic">Arabic -> x-mac-arabic</option>
+                                            <option value="windows-1256">Arabic -> windows-1256</option>
+                                            <option value="iso-8859-4">Baltic -> iso-8859-4</option>
+                                            <option value="windows-1257">Baltic -> windows-1257</option>
+                                            <option value="iso-8859-2">Central European -> iso-8859-2</option>
+                                            <option value="x-mac-ce">Central European -> x-mac-ce</option>
+                                            <option value="windows-1250">Central European -> windows-1250</option>
+                                            <option value="euc-cn">Chinese -> euc-cn</option>
+                                            <option value="gb2312">Chinese -> gb2312</option>
+                                            <option value="hz-gb-2312">Chinese -> hz-gb-2312</option>
+                                            <option value="x-mac-chinesesimp">Chinese -> x-mac-chinesesimp</option>
+                                            <option value="cp-936">Chinese -> cp-936</option>
+                                            <option value="big5">Chinese -> big5</option>
+                                            <option value="x-mac-chinesetrad">Chinese -> x-mac-chinesetrad</option>
+                                            <option value="cp-950">Chinese -> cp-950</option>
+                                            <option value="cp-932">Chinese -> cp-932</option>
+                                            <option value="euc-tw">Chinese -> euc-tw</option>
+                                            <option value="x-chinese-cns">Chinese -> x-chinese-cns</option>
+                                            <option value="x-chinese-eten">Chinese -> x-chinese-eten</option>
+                                            <option value="iso-8859-5">Cyrillic -> iso-8859-5</option>
+                                            <option value="koi8-r">Cyrillic -> koi8-r</option>
+                                            <option value="windows-1251">Cyrillic -> windows-1251</option>
+                                            <option value="x-mac-cyrillic">Cyrillic -> x-mac-cyrillic</option>
+                                            <option value="iso-8859-7">Greek -> iso-8859-7</option>
+                                            <option value="windows-1253">Greek -> windows-1253</option>
+                                            <option value="x-mac-greek">Greek -> x-mac-greek</option>
+                                            <option value="iso-8859-8">Hebrew -> iso-8859-8</option>
+                                            <option value="windows-1255">Hebrew -> windows-1255</option>
+                                            <option value="euc-jp">Japanese -> euc-jp</option>
+                                            <option value="shift_jis">Japanese -> shift_jis</option>
+                                            <option value="iso-2022-jp">Japanese -> iso-2022-jp</option>
+                                            <option value="euc-kr">Korean -> euc-kr</option>
+                                            <option value="iso-2022-kr">Korean -> iso-2022-kr</option>
+                                            <option value="iso-8859-10">Nordic -> iso-8859-10</option>
+                                            <option value="iso-8859-3">South European -> iso-8859-3</option>
+                                            <option value="iso-8859-15">Western European -> iso-8859-15</option>
+                                            <option value="iso-8859-1">Western European -> iso-8859-1</option>
+                                            <option value="windows-1252">Western European -> windows-1252</option>
                                         </select>
                                     </div>
                                 </div>
@@ -539,14 +609,12 @@ $output = ob_get_clean();
                 </div>
 
                 <!-- RESULT -->
-                <?php if($action == "send"): ?>
-                <div class="section">
+                <div class="section" id="resultSection" style="display: none;">
                     <div class="section-title">Result</div>
-                    <div class="result-box">
-                        <?php echo $output; ?>
+                    <div class="result-box" id="resultBox">
+                        <!-- Results will appear here -->
                     </div>
                 </div>
-                <?php endif; ?>
 
                 <input type="hidden" name="action" value="send">
                 <input type="hidden" name="dbg" value="0">
@@ -611,12 +679,14 @@ $output = ob_get_clean();
                 $('#user').val("");
                 $('#pass').val("");
                 $('input[name=SSLTLS]').prop('checked', false);
+                countSmtp(); // Update SMTP count
                 saveFormData();
             });
 
             // Reset SMTP
             $("#reset").click(function(){
                 $('#my_smtp').val('');
+                countSmtp(); // Update SMTP count
                 saveFormData();
             });
 
@@ -642,7 +712,7 @@ $output = ob_get_clean();
                 saveFormData();
             });
 
-            // Count emails
+            // Count emails - only valid emails with @
             function countEmails() {
                 var emailText = $('#emaillist').val().trim();
                 if(emailText === '') {
@@ -650,9 +720,24 @@ $output = ob_get_clean();
                     return;
                 }
                 var emails = emailText.split('\n').filter(function(line) {
-                    return line.trim() !== '';
+                    var email = line.trim();
+                    // Count only non-empty lines that contain @
+                    return email !== '' && email.indexOf('@') !== -1;
                 });
                 $('#emailCount').text(emails.length);
+            }
+            
+            // Count SMTP servers
+            function countSmtp() {
+                var smtpText = $('#my_smtp').val().trim();
+                if(smtpText === '') {
+                    $('#smtpCount').text('0');
+                    return;
+                }
+                var smtps = smtpText.split('\n').filter(function(line) {
+                    return line.trim() !== '';
+                });
+                $('#smtpCount').text(smtps.length);
             }
             
             // Update count on textarea change
@@ -660,8 +745,13 @@ $output = ob_get_clean();
                 countEmails();
             });
             
-            // Initial count
+            $('#my_smtp').on('input', function() {
+                countSmtp();
+            });
+            
+            // Initial counts
             countEmails();
+            countSmtp();
             
             // Auto-save
             $('input, textarea, select').on('change', function() {
@@ -691,6 +781,7 @@ $output = ob_get_clean();
                     epriority: $('#epriority').val(),
                     subject: $('#subject').val(),
                     encodety: $('#encodety').val(),
+                    charset: $('select[name=charset]').val(),
                     message: $('#message').val(),
                     emaillist: $('#emaillist').val(),
                     contenttype: $('input[name=contenttype]:checked').val()
@@ -751,6 +842,7 @@ $output = ob_get_clean();
                     $('#epriority').val(formData.epriority || '');
                     $('#subject').val(formData.subject || 'Subject Here');
                     $('#encodety').val(formData.encodety || 'no');
+                    $('select[name=charset]').val(formData.charset || '');
                     $('#message').val(formData.message || 'Message Here');
                     $('#emaillist').val(formData.emaillist || 'your_email@yahoo.com');
                     
@@ -759,6 +851,111 @@ $output = ob_get_clean();
                     }
                 }
             }
+
+            // AJAX Email Sending with Real-Time Streaming
+            $('#sendBtn').click(function(e) {
+                e.preventDefault();
+                
+                // Show result section
+                $('#resultSection').show();
+                $('#resultBox').html('');
+                
+                // Disable send button
+                $('#sendBtn').prop('disabled', true).text('Sending...');
+                $('#stopBtn').prop('disabled', false);
+                
+                // Prepare form data
+                var formData = new FormData();
+                formData.append('action', 'send');
+                formData.append('dbg', '0');
+                formData.append('from', $('input[name=from]').val());
+                formData.append('realname', $('input[name=realname]').val());
+                formData.append('replyto', $('input[name=replyto]').val());
+                formData.append('subject', $('input[name=subject]').val());
+                formData.append('message', $('textarea[name=message]').val());
+                formData.append('emaillist', $('textarea[name=emaillist]').val());
+                formData.append('my_smtp', $('textarea[name=my_smtp]').val());
+                formData.append('ssl_port', $('input[name=ssl_port]').val());
+                formData.append('nrotat', $('input[name=nrotat]').val());
+                formData.append('reconnect', $('input[name=reconnect]').val());
+                formData.append('nbcc', $('input[name=nbcc]').val());
+                formData.append('pause', $('input[name=pause]').val());
+                formData.append('pemails', $('input[name=pemails]').val());
+                formData.append('epriority', $('select[name=epriority]').val());
+                formData.append('encodety', $('select[name=encodety]').val());
+                formData.append('contenttype', $('input[name=contenttype]:checked').val());
+                
+                if($('input[name=lase]').prop('checked')) {
+                    formData.append('lase', 'true');
+                }
+                if($('input[name=repaslog]').prop('checked')) {
+                    formData.append('repaslog', 'true');
+                }
+                if($('input[name=readingconf]').prop('checked')) {
+                    formData.append('readingconf', 'true');
+                }
+                if($('input[name=isbcc]').prop('checked')) {
+                    formData.append('isbcc', 'true');
+                }
+                
+                // Add file if selected
+                var fileInput = $('input[name=userfile]')[0];
+                if(fileInput.files.length > 0) {
+                    formData.append('userfile', fileInput.files[0]);
+                }
+                
+                // Use fetch API for streaming support
+                fetch('send.php', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    
+                    function readStream() {
+                        reader.read().then(({done, value}) => {
+                            if (done) {
+                                $('#sendBtn').prop('disabled', false).text('Send message');
+                                $('#stopBtn').prop('disabled', true);
+                                return;
+                            }
+                            
+                            // Decode and append new content
+                            const text = decoder.decode(value, {stream: true});
+                            $('#resultBox').append(text);
+                            
+                            // Auto-scroll to bottom
+                            var resultBox = document.getElementById('resultBox');
+                            resultBox.scrollTop = resultBox.scrollHeight;
+                            
+                            // Continue reading
+                            readStream();
+                        });
+                    }
+                    
+                    readStream();
+                }).catch(error => {
+                    $('#resultBox').html('<p style="color: #dc3545;">Error: ' + error + '</p>');
+                    $('#sendBtn').prop('disabled', false).text('Send message');
+                    $('#stopBtn').prop('disabled', true);
+                });
+            });
+
+            // Stop sending - creates stop flag file
+            $('#stopBtn').click(function() {
+                // Send stop request to server
+                fetch('stop.php', {
+                    method: 'POST'
+                }).then(response => response.json())
+                .then(data => {
+                    console.log('Stop requested:', data);
+                }).catch(error => {
+                    console.error('Stop error:', error);
+                });
+                
+                $('#sendBtn').prop('disabled', false).text('Send message');
+                $('#stopBtn').prop('disabled', true);
+            });
         });
     </script>
 </body>
