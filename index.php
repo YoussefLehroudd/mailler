@@ -501,7 +501,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                             
                             <div class="form-group">
                                 <button type="button" class="btn btn-success" id="sendBtn">Send message</button>
-                                <button type="button" class="btn btn-danger" id="stopBtn" disabled>Stop sending</button>
+                                <button type="button" class="btn btn-danger" id="stopBtn" style="display: none; margin-left: 10px;">Stop Sending</button>
                             </div>
                         </div>
                         
@@ -852,6 +852,26 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 }
             }
 
+            // Stop Sending Handler
+            $('#stopBtn').click(function(e) {
+                e.preventDefault();
+                
+                // Disable stop button to prevent multiple clicks
+                $('#stopBtn').prop('disabled', true).text('Stopping...');
+                
+                // Send stop signal to backend
+                $.post('check_stop.php', { action: 'stop' }, function(response) {
+                    $('#resultBox').append('<br><p style="color: #dc3545; font-weight: bold;">Stop signal sent. Waiting for current email to complete...</p>');
+                    
+                    // Auto-scroll to bottom
+                    var resultBox = document.getElementById('resultBox');
+                    resultBox.scrollTop = resultBox.scrollHeight;
+                }).fail(function() {
+                    $('#resultBox').append('<br><p style="color: #dc3545;">Failed to send stop signal.</p>');
+                    $('#stopBtn').prop('disabled', false).text('Stop Sending');
+                });
+            });
+
             // AJAX Email Sending with Real-Time Streaming
             $('#sendBtn').click(function(e) {
                 e.preventDefault();
@@ -860,9 +880,9 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 $('#resultSection').show();
                 $('#resultBox').html('');
                 
-                // Disable send button
+                // Disable send button and show stop button
                 $('#sendBtn').prop('disabled', true).text('Sending...');
-                $('#stopBtn').prop('disabled', false);
+                $('#stopBtn').show().prop('disabled', false).text('Stop Sending');
                 
                 // Prepare form data
                 var formData = new FormData();
@@ -916,7 +936,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                         reader.read().then(({done, value}) => {
                             if (done) {
                                 $('#sendBtn').prop('disabled', false).text('Send message');
-                                $('#stopBtn').prop('disabled', true);
+                                $('#stopBtn').hide();
                                 return;
                             }
                             
@@ -937,24 +957,8 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 }).catch(error => {
                     $('#resultBox').html('<p style="color: #dc3545;">Error: ' + error + '</p>');
                     $('#sendBtn').prop('disabled', false).text('Send message');
-                    $('#stopBtn').prop('disabled', true);
+                    $('#stopBtn').hide();
                 });
-            });
-
-            // Stop sending - creates stop flag file
-            $('#stopBtn').click(function() {
-                // Send stop request to server
-                fetch('stop.php', {
-                    method: 'POST'
-                }).then(response => response.json())
-                .then(data => {
-                    console.log('Stop requested:', data);
-                }).catch(error => {
-                    console.error('Stop error:', error);
-                });
-                
-                $('#sendBtn').prop('disabled', false).text('Send message');
-                $('#stopBtn').prop('disabled', true);
             });
         });
     </script>

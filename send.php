@@ -28,6 +28,17 @@ header('X-Accel-Buffering: no');
 echo str_repeat(' ', 1024);
 flush();
 
+// Initialize stop flag - clear any existing stop signal
+$stopFlagFile = __DIR__ . '/stop_flag.txt';
+if(file_exists($stopFlagFile)) {
+    unlink($stopFlagFile);
+}
+
 // Include backend - output will stream in real-time
 include 'backend.php';
+
+// Clean up stop flag after sending completes
+if(file_exists($stopFlagFile)) {
+    unlink($stopFlagFile);
+}
 ?>

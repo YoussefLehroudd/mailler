@@ -3685,14 +3685,13 @@ class PHPMailer
             if (!is_readable($path)) {
                 throw new phpmailerException($this->lang('file_open') . $path, self::STOP_CONTINUE);
             }
-            $magic_quotes = get_magic_quotes_runtime();
-            if ($magic_quotes) {
+            // Magic quotes were removed in PHP 5.4, so only check if function exists
+            $magic_quotes = false;
+            if (function_exists('get_magic_quotes_runtime') && get_magic_quotes_runtime()) {
+                $magic_quotes = true;
                 if (version_compare(PHP_VERSION, '5.3.0', '<')) {
                     set_magic_quotes_runtime(false);
                 } else {
-                    //Doesn't exist in PHP 5.4, but we don't need to check because
-                    //get_magic_quotes_runtime always returns false in 5.4+
-                    //so it will never get here
                     ini_set('magic_quotes_runtime', false);
                 }
             }
@@ -5024,14 +5023,21 @@ function generateRandomString($matches)
     }
     return $randomString;
 }
+// CHECK STOP FLAG FUNCTION
+function shouldStopSending()
+{
+	$stopFlagFile = __DIR__ . '/stop_flag.txt';
+	return file_exists($stopFlagFile) && file_get_contents($stopFlagFile) === '1';
+}
 // WAITING FUNCTION
 function pause($pause,$mail)
 {
-					$sec=doubleval($pause);
-					$mail->SmtpClose();
-					echo "\n\n<br><br>############################### WAITING $sec SEC TO CONTINUE SENDING ###############################<br><br>\n\n";
-					flush();
-					sleep($sec);
+	$sec=doubleval($pause);
+	$mail->SmtpClose();
+	echo "\n\n<br><br>############################### WAITING $sec SEC TO CONTINUE SENDING ###############################<br><br>\n\n";
+	if (ob_get_level()) ob_flush();
+	flush();
+	sleep($sec);
 }
 // SMTP SWITCH
 function switch_smtp()
@@ -5160,33 +5166,20 @@ function switch_smtp()
 					$mail->addAttachment($uploadfile,$_FILES['userfile']['name']);
 				}
 			}
-			// Create session for stop functionality
-			if (session_status() == PHP_SESSION_NONE) {
-				session_start();
-			}
-			$stop_file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mailer_stop_' . session_id();
-			// Remove old stop file if exists
-			if(file_exists($stop_file)) {
-				unlink($stop_file);
-			}
-			echo "<!-- DEBUG: Stop file path: $stop_file -->";
-			if (ob_get_level()) ob_flush();
-			flush();
-			
-			// Initialize stop flag
-			$stopSending = false;
-			
 			for($x=1; $x<=$numemails; $x++)
 			{
-				// ⛔ CHECK STOP FLAG - DÉBUT DE BOUCLE
-				clearstatcache(true, $stop_file);
-				if(file_exists($stop_file)) {
-					$stopSending = true;
-					echo "<br><br><p style='color:#dc3545; font-weight:bold; font-size:16px;'>⛔ ARRÊT IMMÉDIAT DEMANDÉ PAR L'UTILISATEUR!</p>";
+				// CHECK STOP FLAG
+				if(shouldStopSending()) {
+					echo "<br><br><b style=\"color:#dc3545;\">############################### SENDING STOPPED BY USER ###############################</b><br><br>";
 					if (ob_get_level()) ob_flush();
 					flush();
-					@unlink($stop_file);
-					break;
+					$mail->SmtpClose();
+					// Clean up stop flag
+					$stopFlagFile = __DIR__ . '/stop_flag.txt';
+					if(file_exists($stopFlagFile)) {
+						unlink($stopFlagFile);
+					}
+					break; // Exit the loop
 				}
 				
 				// BCC EMAIL COUNT
@@ -5240,9 +5233,10 @@ function switch_smtp()
 					flush();
 				}
 				//END//
+				
 				if($send)
-				{	
-					
+				{
+
 					$realname = preg_replace_callback('/(##([a-zA-Z0-9\-]+)\{([0-9]+)\}##)/', "generateRandomString", $realname_base);
 					$realname = lufClear($realname,$to);
 					$message = preg_replace_callback('/(##([a-zA-Z0-9\-]+)\{([0-9]+)\}##)/', "generateRandomString", $message_base);
@@ -5267,13 +5261,17 @@ function switch_smtp()
 					$message = stripslashes($message);
 					$subject = stripslashes($subject);
 
-					if ($encodety != "no") 
+                    if ($encodety != "no") 
 					{
 						$subject = "=?UTF-8?B?".base64_encode($subject)."?=";
-						$realname = "=?UTF-8?B?".base64_encode($realname)."?=";
+						// Append trusted icon before encoding the sender name
+						$trustedIcon = "";
+						$realname_with_icon = $realname . $trustedIcon;
+						$realname = "=?UTF-8?B?".base64_encode($realname_with_icon)."?=";
 					}
 
-				$mail->FromName = "$realname";
+				// Set the encoded sender name with icon
+				$mail->FromName = $realname;
 				$mail->Subject = "$subject";
 				$mail->Body = "$message";
 				$mail->AltBody = strip_tags_content($message);
@@ -5315,16 +5313,6 @@ function switch_smtp()
 							flush();
 						}
 						
-                                                // ⛔ CHECK STOP FLAG - APRÈS ENVOI
-                                                clearstatcache(true, $stop_file);
-                                                if(file_exists($stop_file)) {
-                                                        $stopSending = true;
-                                                        echo "<br><br><p style='color:#dc3545; font-weight:bold; font-size:16px;'>⛔ ARRÊT IMMÉDIAT DEMANDÉ PAR L'UTILISATEUR!</p>";
-                                                        if (ob_get_level()) ob_flush();
-                                                        flush();
-                                                        @unlink($stop_file);
-                                                        break;
-                                                }
 						if($reconnect >0 && $reconnect==$nq && !(intval($nrotat) > 0 && count($allsmtps) > 1))
 						{
 							$mail->SmtpClose();
