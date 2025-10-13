@@ -5277,53 +5277,66 @@ function switch_smtp()
 				$mail->AltBody = strip_tags_content($message);
 				
 				// SENDING AND TESTING
-				if(!$mail->Send())
-						{
-							if($default_system != "1")
-							{
-								echo "<b style=\"color:#D4001A;\">FAILED !!</b> [RECEPIENT CAN'T RECEIVE MESSAGE.]<br>";
-								if (ob_get_level()) ob_flush();
-								flush();
-							}
-							if($default_system  == "1")
-							{
-								$mail->IsMail();
-								if(!$mail->Send())
-								{
-									echo "<b style=\"color:#D4001A;\">FAILED !!</b> [RECEPIENT CAN'T RECEIVE MESSAGE.]<br>";
-									if (ob_get_level()) ob_flush();
-									flush();
-								}
-								else 
-								{
-									if($isbcc)
-										echo "# BCC EMAIL NUMERO <span style=\"color:red;\">NUMERO $nm </span> SEND :<b style=\"color:#28a745;\">OK</b><br>";
-									else echo "<b style=\"color:#28a745;\">OK</b><br>";
-									if (ob_get_level()) ob_flush();
-									flush();
-								}
-							}
-						}
-						else 
-						{
-							if($isbcc)
-								echo "# BCC EMAIL <span style=\"color:red;\">NUMERO $nm </span> SEND :<b style=\"color:#28a745;\">OK</b><br>";
-							else echo "<b style=\"color:#28a745;\">OK</b><br>";
-							if (ob_get_level()) ob_flush();
-							flush();
-						}
-						
-						if($reconnect >0 && $reconnect==$nq && !(intval($nrotat) > 0 && count($allsmtps) > 1))
-						{
-							$mail->SmtpClose();
-							echo "<p><b>########################### SMTP CLOSED AND ATTEMPTS TO RECONNECT NEW CONNECTION SEASON ########################### </b></p>";
-							$nq=0;
-						}
-						$nq=$nq+1;
-						if (ob_get_level()) ob_flush();
-						flush();
-						if($isbcc)
-						$mail->clearBCCs();
+                    if (!$mail->Send()) {
+                        // Get detailed error info
+                        $errInfo   = trim($mail->ErrorInfo);
+                        $smtpErr   = '';
+                        $txId      = '';
+
+                        if (method_exists($mail, 'getSMTPInstance')) {
+                            $smtp = $mail->getSMTPInstance();
+                            if ($smtp) {
+                                $e = $smtp->getError();
+                                if (!empty($e)) {
+                                    $smtpErr = sprintf(
+                                        ' [SMTP: code=%s, detail=%s, smtp_code=%s, smtp_msg=%s]',
+                                        $e['code']      ?? '',
+                                        $e['detail']    ?? '',
+                                        $e['smtp_code'] ?? '',
+                                        $e['smtp_msg']  ?? ''
+                                    );
+                                }
+                                if (method_exists($smtp, 'getLastTransactionID')) {
+                                    $txId = $smtp->getLastTransactionID();
+                                }
+                            }
+                        }
+
+                        echo '<b style="color:#D4001A;">FAILED !!</b><br>
+                            <div style="color:#D4001A; margin-top:4px;">
+                                [Error Details: ' . htmlspecialchars($errInfo, ENT_QUOTES, 'UTF-8') . ']
+                                ' . htmlspecialchars($smtpErr, ENT_QUOTES, 'UTF-8') .
+                                ($txId ? ' [Transaction ID: ' . htmlspecialchars($txId, ENT_QUOTES, 'UTF-8') . ']' : '') . '
+                            </div><br>';
+
+                        if (ob_get_level()) ob_flush();
+                        flush();
+
+                        if ($default_system == "1") {
+                            $mail->IsMail();
+                            if (!$mail->Send()) {
+                                $errInfo = trim($mail->ErrorInfo);
+                                echo '<b style="color:#D4001A;">FAILED !!</b><br>
+                                    <div style="color:#D4001A;">[mail() Error: ' . htmlspecialchars($errInfo, ENT_QUOTES, 'UTF-8') . ']</div><br>';
+                                if (ob_get_level()) ob_flush();
+                                flush();
+                            } else {
+                                if ($isbcc)
+                                    echo '# BCC EMAIL <span style="color:red;">NUMBER ' . $nm . '</span> SENT: <b style="color:#28a745;">OK ✅</b><br>';
+                                else
+                                    echo '<b style="color:#28a745;">EMAIL SENT SUCCESSFULLY ✅</b><br>';
+                                if (ob_get_level()) ob_flush();
+                                flush();
+                            }
+                        }
+                    } else {
+                        if ($isbcc)
+                            echo '# BCC EMAIL <span style="color:red;">NUMBER ' . $nm . '</span> SENT: <b style="color:#28a745;">OK ✅</b><br>';
+                        else
+                            echo '<b style="color:#28a745;">EMAIL SENT SUCCESSFULLY ✅</b><br>';
+                        if (ob_get_level()) ob_flush();
+                        flush();
+                    }
 				}
 				//END//
 				
