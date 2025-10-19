@@ -4,6 +4,7 @@ $message_base = "Message Here";
 $action = "";
 $emaillist = "your_email@yahoo.com";
 $ssl_port = "587";
+$smtp_timeout = "30";
 $my_smtp = "";
 $nrotat = "0";
 $reconnect = "0";
@@ -431,6 +432,14 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                                     <span>Emails</span>
                                 </div>
                             </div>
+
+                            <div class="form-group">
+                                <div class="inline-group">
+                                    <label style="min-width: 140px;">SMTP timeout</label>
+                                    <input type="number" min="5" max="300" name="smtp_timeout" id="smtp_timeout" value="<?php echo $smtp_timeout;?>" class="form-control">
+                                    <span>Seconds</span>
+                                </div>
+                            </div>
                             
                             <div class="form-group">
                                 <div class="inline-group">
@@ -767,6 +776,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     my_smtp: $('#my_smtp').val(),
                     nrotat: $('input[name=nrotat]').val(),
                     reconnect: $('input[name=reconnect]').val(),
+                    smtp_timeout: $('#smtp_timeout').val(),
                     isbcc: $('input[name=isbcc]').prop('checked'),
                     nbcc: $('input[name=nbcc]').val(),
                     pause: $('input[name=pause]').val(),
@@ -799,6 +809,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     $('#ssl_port').val(formData.ssl_port || '587');
                     $('#user').val(formData.user || '');
                     $('#my_smtp').val(formData.my_smtp || '');
+                    $('#smtp_timeout').val(formData.smtp_timeout || '30');
                     $('input[name=nrotat]').val(formData.nrotat || '0');
                     $('input[name=reconnect]').val(formData.reconnect || '0');
                     $('input[name=isbcc]').prop('checked', formData.isbcc || false);
@@ -898,6 +909,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 formData.append('ssl_port', $('input[name=ssl_port]').val());
                 formData.append('nrotat', $('input[name=nrotat]').val());
                 formData.append('reconnect', $('input[name=reconnect]').val());
+                formData.append('smtp_timeout', $('#smtp_timeout').val());
                 formData.append('nbcc', $('input[name=nbcc]').val());
                 formData.append('pause', $('input[name=pause]').val());
                 formData.append('pemails', $('input[name=pemails]').val());

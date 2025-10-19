@@ -40,6 +40,7 @@ $reconnect="0";
 $epriority="";
 $my_smtp="";
 $ssl_port="587";
+$smtp_timeout = 30;
 $encodety="";
 $replyto="";
 $subject="Yes";
@@ -92,6 +93,15 @@ if(!empty($_POST)) {
         $nrotat=$_POST['nrotat'];
     if(!empty($_POST['pemails']))
         $pemails=$_POST['pemails'];
+    if(isset($_POST['smtp_timeout'])) {
+        $timeoutCandidate = intval($_POST['smtp_timeout']);
+        if($timeoutCandidate < 5) {
+            $timeoutCandidate = 5;
+        } elseif($timeoutCandidate > 300) {
+            $timeoutCandidate = 300;
+        }
+        $smtp_timeout = $timeoutCandidate;
+    }
     if(!empty($_POST['lase']))
         $lase=true;
     if(!empty($_POST['nbcc']))
@@ -4964,6 +4974,8 @@ class phpmailerException extends Exception
 
 
 $mail = new PHPMailer();
+$mail->Timeout = $smtp_timeout;
+@ini_set('default_socket_timeout', (string)$smtp_timeout);
 
 
 // REMOVE ALL HTML TAG WILL BE USED IN ALTBODY
