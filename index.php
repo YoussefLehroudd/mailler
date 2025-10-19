@@ -358,7 +358,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                                     <label style="margin: 0; white-space: nowrap; min-width: 90px;">Security</label>
                                     <div>
                                         <div class="checkbox-inline">
-                                            <input type="radio" name="SSLTLS" value="TLS" id="tls">
+                                            <input type="radio" name="SSLTLS" value="TLS" id="tls" checked>
                                             <label for="tls">TLS</label>
                                         </div>
                                         <div class="checkbox-inline">
@@ -665,29 +665,62 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 }
             });
 
+            // Ensure TLS is selected by default when nothing stored
+            $('input[name=SSLTLS][value="TLS"]').prop('checked', true);
+
             // Load saved data
             loadFormData();
 
+            // Clean up any legacy SMTP entries (e.g. undefined security values)
+            sanitizeSmtpList({ skipSave: true, skipCounts: true });
+
             // Add SMTP
             $("#add").click(function(){
-                var smtpLine = $('#ip').val()+'|'+$('#ssl_port').val()+'|'+$('#user').val()+'|'+$('#pass').val()+"|"+$('input[name=SSLTLS]:checked').val();
+                var host = $('#ip').val().trim();
+                var port = $('#ssl_port').val().trim() || '587';
+                var username = $('#user').val().trim();
+                var password = $('#pass').val();
+                var security = $('input[name=SSLTLS]:checked').val();
+
+                if(host === '' || username === '' || password === '') {
+                    alert('Please fill SMTP host, username, and password before adding.');
+                    return;
+                }
+                if(port === '' || isNaN(port)) {
+                    alert('Please provide a valid numeric port.');
+                    return;
+                }
+                if(!security) {
+                    security = 'TLS';
+                    $('input[name=SSLTLS][value="TLS"]').prop('checked', true);
+                }
+
+                security = security.toUpperCase();
+                if(security === 'NONE') {
+                    security = 'NON';
+                } else if(security === 'STARTTLS' || security === 'START_TLS') {
+                    security = 'TLS';
+                }
+
+                var smtpLine = host + '|' + port + '|' + username + '|' + password + '|' + security;
                 if($('input[name=isbcc]').prop('checked')) {
                     smtpLine += '|BCC';
                 } else {
                     smtpLine += '|NOBCC';
                 }
                 
-                var current = $('#my_smtp').val();
-                if(current == "") {
+                var current = $('#my_smtp').val().trim();
+                if(current === "") {
                     $('#my_smtp').val(smtpLine);
                 } else {
                     $('#my_smtp').val(current + '\n' + smtpLine);
                 }
                 
-                $('#ip').val("");
-                $('#user').val("");
-                $('#pass').val("");
-                $('input[name=SSLTLS]').prop('checked', false);
+                $('#ip').val('');
+                $('#user').val('');
+                $('#pass').val('');
+                $('#ssl_port').val(port);
+                $('input[name=SSLTLS][value="'+security+'"]').prop('checked', true);
                 countSmtp(); // Update SMTP count
                 saveFormData();
             });
@@ -748,6 +781,69 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 });
                 $('#smtpCount').text(smtps.length);
             }
+
+            function sanitizeSmtpList(options) {
+                var raw = $('#my_smtp').val();
+                if(typeof raw !== 'string' || raw.trim() === '') {
+                    if(!(options && options.skipCounts)) {
+                        $('#smtpCount').text('0');
+                    }
+                    return false;
+                }
+
+                var lines = raw.split(/\r?\n/);
+                var changed = false;
+                var sanitized = lines.map(function(line) {
+                    var trimmedLine = line.trim();
+                    if(trimmedLine === '') {
+                        return '';
+                    }
+                    var parts = trimmedLine.split('|');
+                    if(parts.length < 4) {
+                        return trimmedLine;
+                    }
+
+                    var port = (parts[1] || '').toString().trim();
+                    var securityToken = (parts[4] || '').toString().trim().toUpperCase();
+
+                    if(securityToken === 'NONE') {
+                        securityToken = 'NON';
+                    } else if(securityToken === 'STARTTLS' || securityToken === 'START_TLS') {
+                        securityToken = 'TLS';
+                    }
+
+                    if(['SSL', 'TLS', 'NON', ''].indexOf(securityToken) === -1) {
+                        if(port === '465') {
+                            securityToken = 'SSL';
+                        } else if(port === '587') {
+                            securityToken = 'TLS';
+                        } else {
+                            securityToken = 'NON';
+                        }
+                    }
+
+                    if(parts[4] !== securityToken) {
+                        parts[4] = securityToken;
+                        changed = true;
+                    }
+
+                    return parts.join('|');
+                }).filter(function(line) {
+                    return line !== '';
+                });
+
+                if(changed) {
+                    $('#my_smtp').val(sanitized.join('\n'));
+                    if(!(options && options.skipCounts)) {
+                        countSmtp();
+                    }
+                    if(!(options && options.skipSave)) {
+                        saveFormData();
+                    }
+                }
+
+                return changed;
+            }
             
             // Update count on textarea change
             $('#emaillist').on('input', function() {
@@ -769,6 +865,11 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 
             // Save to localStorage
             function saveFormData() {
+                var sanitized = sanitizeSmtpList({ skipSave: true, skipCounts: true });
+                if(sanitized) {
+                    countSmtp();
+                }
+
                 var formData = {
                     ip: $('#ip').val(),
                     ssl_port: $('#ssl_port').val(),
@@ -801,6 +902,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 
             // Load from localStorage
             function loadFormData() {
+                var sanitized = false;
                 var savedData = localStorage.getItem('mailerFormData');
                 if(savedData) {
                     var formData = JSON.parse(savedData);
@@ -809,6 +911,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     $('#ssl_port').val(formData.ssl_port || '587');
                     $('#user').val(formData.user || '');
                     $('#my_smtp').val(formData.my_smtp || '');
+                    sanitized = sanitizeSmtpList({ skipSave: true, skipCounts: true }) || sanitized;
                     $('#smtp_timeout').val(formData.smtp_timeout || '30');
                     $('input[name=nrotat]').val(formData.nrotat || '0');
                     $('input[name=reconnect]').val(formData.reconnect || '0');
@@ -861,6 +964,11 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                         $('input[name=contenttype][value="'+formData.contenttype+'"]').prop('checked', true);
                     }
                 }
+
+                if(sanitized) {
+                    countSmtp();
+                    saveFormData();
+                }
             }
 
             // Stop Sending Handler
@@ -896,6 +1004,12 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 $('#stopBtn').show().prop('disabled', false).text('Stop Sending');
                 
                 // Prepare form data
+                var sanitizedDuringSend = sanitizeSmtpList({ skipSave: true, skipCounts: true });
+                if(sanitizedDuringSend) {
+                    countSmtp();
+                    saveFormData();
+                }
+
                 var formData = new FormData();
                 formData.append('action', 'send');
                 formData.append('dbg', '0');

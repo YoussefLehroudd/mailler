@@ -4976,6 +4976,21 @@ class phpmailerException extends Exception
 $mail = new PHPMailer();
 $mail->Timeout = $smtp_timeout;
 @ini_set('default_socket_timeout', (string)$smtp_timeout);
+$mail->SMTPOptions = array_replace_recursive(
+	is_array($mail->SMTPOptions) ? $mail->SMTPOptions : array(),
+	array(
+		'ssl' => array(
+			'verify_peer' => false,
+			'verify_peer_name' => false,
+			'allow_self_signed' => true,
+		),
+		'socket' => array(
+			'connect_timeout' => $smtp_timeout,
+			'timeout' => $smtp_timeout,
+		),
+	)
+);
+$mail->SMTPAutoTLS = true;
 
 
 // REMOVE ALL HTML TAG WILL BE USED IN ALTBODY
@@ -5082,11 +5097,35 @@ function switch_smtp()
 				$from_base = $smtprot[2];
 			}
 	
-			if(isset($smtprot[4]) && $smtprot[4] =="SSL")
+			$securityMode = '';
+			if(isset($smtprot[4])) {
+				$securityMode = strtoupper(trim($smtprot[4]));
+				if($securityMode === 'NONE') {
+					$securityMode = 'NON';
+				} else if($securityMode === 'STARTTLS' || $securityMode === 'START_TLS') {
+					$securityMode = 'TLS';
+				} else if($securityMode === 'UNDEFINED') {
+					$securityMode = 'TLS';
+				}
+			}
+			if($securityMode !== 'SSL' && $securityMode !== 'TLS' && $securityMode !== 'NON' && $securityMode !== '') {
+				$portCandidate = isset($smtprot[1]) ? trim((string)$smtprot[1]) : '';
+				if($portCandidate === '465') {
+					$securityMode = 'SSL';
+				} else if($portCandidate === '587') {
+					$securityMode = 'TLS';
+				} else {
+					$securityMode = '';
+				}
+			}
+			if(($securityMode === '' || $securityMode === 'NON') && $mail->Port == 587) {
+				$securityMode = 'TLS';
+			}
+			if($securityMode === 'SSL')
 				$mail->SMTPSecure  = "ssl";
-			else if(isset($smtprot[4]) && $smtprot[4] =="TLS")
+			else if($securityMode === 'TLS')
 				$mail->SMTPSecure  = "tls";
-			else if(isset($smtprot[4]) && $smtprot[4] =="NON")
+			else
 				$mail->SMTPSecure  = "";
 			
 			if(isset($smtprot[5]) && $smtprot[5] =="BCC")
