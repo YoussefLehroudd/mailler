@@ -33,7 +33,6 @@ $stopFlagFile = __DIR__ . '/stop_flag.txt';
 if(file_exists($stopFlagFile)) {
     unlink($stopFlagFile);
 }
-
 // Include backend - output will stream in real-time
 include 'backend.php';
 

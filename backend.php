@@ -5410,6 +5410,3 @@ function switch_smtp()
 			}
 		}
 	}
-
-
-

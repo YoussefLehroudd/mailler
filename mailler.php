@@ -6375,6 +6375,3 @@ function switch_smtp()
 			}
 		}
 	}
-
-
-
