@@ -141,10 +141,9 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
         .header {
             position: relative;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-end;
             gap: 28px;
-            padding: 34px 38px;
-            cursor: pointer;
+            padding: 24px 38px;
             background:
                 linear-gradient(135deg, rgba(14, 116, 144, 0.12), rgba(255, 255, 255, 0.6)),
                 linear-gradient(120deg, rgba(249, 115, 22, 0.14), transparent 42%);
@@ -239,19 +238,23 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
         .hero-toggle {
             display: inline-flex;
             align-items: center;
-            gap: 10px;
-            font-size: 13px;
-            color: var(--text);
-            font-weight: 600;
-        }
-
-        .hero-toggle::after {
-            content: 'Open guide';
-            padding: 10px 14px;
+            justify-content: center;
+            min-width: 148px;
+            padding: 12px 18px;
             border-radius: 999px;
+            border: none;
             background: linear-gradient(135deg, var(--accent), #0f9bbf);
             color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
             box-shadow: 0 14px 28px rgba(14, 116, 144, 0.18);
+        }
+
+        .hero-toggle:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 18px 34px rgba(14, 116, 144, 0.22);
         }
 
         #instructionPanel {
@@ -270,8 +273,9 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
             grid-template-columns: minmax(0, 1fr);
             gap: 24px;
             align-items: start;
-            max-width: 1120px;
-            margin: 0 auto 24px;
+            width: 100%;
+            max-width: none;
+            margin: 0 0 24px;
         }
 
         .section {
@@ -620,15 +624,6 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
             .header {
                 padding-top: 24px;
                 padding-bottom: 24px;
-                flex-direction: column;
-            }
-
-            .hero-title {
-                font-size: 2.2rem;
-            }
-
-            .hero-toggle::after {
-                content: 'Guide';
             }
 
             .section {
@@ -675,12 +670,6 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
         }
 
         @media (max-width: 520px) {
-            .hero-kicker,
-            .hero-badge {
-                width: 100%;
-                justify-content: center;
-            }
-
             .result-box {
                 min-height: 220px;
                 padding: 18px;
@@ -690,23 +679,8 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 </head>
 <body>
     <div class="container">
-        <div class="header" onclick="toggleInstruction()">
-            <div class="hero-copy">
-                <span class="hero-kicker">Responsive Mail Console</span>
-                <h1 class="hero-title">Mailler Workspace</h1>
-                <p class="hero-subtitle">
-                    Une interface plus propre pour piloter SMTP, API delivery, sender identity, attachments,
-                    and live sending logs from one Railway-ready dashboard.
-                </p>
-            </div>
-            <div class="hero-side">
-                <div class="hero-badges">
-                    <span class="hero-badge"><strong>4</strong> modes</span>
-                    <span class="hero-badge"><strong>Live</strong> logs</span>
-                    <span class="hero-badge"><strong>100%</strong> responsive</span>
-                </div>
-                <span class="hero-toggle">Click anywhere here to toggle the guide</span>
-            </div>
+        <div class="header">
+            <button type="button" class="hero-toggle" id="guideToggleBtn" onclick="toggleInstruction()">Open guide</button>
         </div>
         
         <!-- INSTRUCTION PANEL -->
@@ -926,22 +900,22 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                             <div class="form-group">
                                 <div style="display: flex; align-items: center; gap: 15px;">
                                     <label style="margin: 0; white-space: nowrap; min-width: 90px;">Sender email</label>
-                                    <input type="text" name="from" id="from" value="<?php if(!$lase) echo $from_base;?>" class="form-control" placeholder="Sender email" <?php if($lase) echo "disabled"?> style="width: 250px;">
                                     <div class="checkbox-inline">
                                         <input type="checkbox" name="lase" value="true" id="lase" <?php if($lase) echo "checked"; ?> checked>
                                         <label for="lase">Sender email as login</label>
                                     </div>
+                                    <input type="text" name="from" id="from" value="<?php if(!$lase) echo $from_base;?>" class="form-control" placeholder="Sender email" <?php if($lase) echo "disabled"?> style="width: 250px;">
                                 </div>
                             </div>
                             
                             <div class="form-group">
                                 <div style="display: flex; align-items: center; gap: 15px;">
                                     <label style="margin: 0; white-space: nowrap; min-width: 90px;">Reply-To</label>
-                                    <input type="text" name="replyto" id="replyto" value="<?php if(!$repaslog) echo $replyto;?>" class="form-control" placeholder="Reply-To Email" <?php if($repaslog) echo "disabled";?> style="width: 250px;">
                                     <div class="checkbox-inline">
                                         <input type="checkbox" name="repaslog" value="true" id="repaslog" <?php if($repaslog) echo "checked"; ?> checked>
                                         <label for="repaslog">Reply-To as login</label>
                                     </div>
+                                    <input type="text" name="replyto" id="replyto" value="<?php if(!$repaslog) echo $replyto;?>" class="form-control" placeholder="Reply-To Email" <?php if($repaslog) echo "disabled";?> style="width: 250px;">
                                 </div>
                             </div>
                             
@@ -1099,10 +1073,19 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
     <script>
         function toggleInstruction() {
             var panel = document.getElementById('instructionPanel');
+            var button = document.getElementById('guideToggleBtn');
             if(panel.style.display === 'none') {
                 panel.style.display = 'block';
+                if (button) {
+                    button.textContent = 'Close guide';
+                    button.setAttribute('aria-expanded', 'true');
+                }
             } else {
                 panel.style.display = 'none';
+                if (button) {
+                    button.textContent = 'Open guide';
+                    button.setAttribute('aria-expanded', 'false');
+                }
             }
         }
 
