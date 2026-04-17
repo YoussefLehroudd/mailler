@@ -5450,13 +5450,9 @@ function switch_smtp()
 			
 			// Remove only empty lines and invalid emails (keep duplicates)
 			foreach($allemails_raw as $email) {
-				$email = trim($email);
+				$email = sanitizeEmailAddress(trim($email));
 				// Skip empty lines
 				if(empty($email)) {
-					continue;
-				}
-				// Skip invalid emails (must contain @)
-				if(strpos($email, '@') === false) {
 					continue;
 				}
 				$allemails[] = $email;
@@ -5466,6 +5462,12 @@ function switch_smtp()
 			$nq=0;
 			$qx=1;
 			$rotation_counter=0; // Counter for SMTP rotation
+			$serverMailFallbackAllowed = false;
+			$envSmtpLine = buildConfiguredSmtpLine();
+			if(count($allsmtps) === 0 && !empty($envSmtpLine)) {
+				$allsmtps[] = $envSmtpLine;
+			}
+			$hasSmtpTransport = count($allsmtps) > 0;
 			
 			if(!empty($epriority))
 				$mail->Priority = "$epriority";
@@ -5475,20 +5477,46 @@ function switch_smtp()
 				$mail->IsHtml(false);
 			if(empty($reconnect))
 				$reconnect=0;
+			$replyto = sanitizeEmailAddress($replyto);
 			if(!empty($replyto))
-				$mail->AddReplyTo("$replyto");
-			if(empty($my_smtp))
+				$mail->AddReplyTo($replyto);
+
+			if($delivery_mode === 'smtp' && !$hasSmtpTransport) {
+				logLine('[ERROR] SMTP mode selected but no SMTP configuration was found.');
+				logLine('[INFO] Add SMTP in the form or set SMTP_HOST / SMTP_USER / SMTP_PASS in Railway variables.');
+				exit;
+			}
+
+			if($delivery_mode === 'server')
 			{
 				$mail->SMTPAuth = false;
-				$mail->IsSendmail();
+				$mail->IsMail();
 				$default_system="1";
+				logLine('[INFO] Transport: server mail');
+				if(IS_RAILWAY) {
+					logLine('[WARN] Railway usually does not provide a local mail server. If this fails, use SMTP or an email API provider.');
+				}
 			}
-			else
+			else if($hasSmtpTransport)
 			{
 				$mail->IsSMTP();
 				$mail->SMTPKeepAlive = true;
 				$mail->SMTPAuth = true;
 				switch_smtp();
+				logLine('[INFO] Transport: SMTP' . (!empty($mail->Host) ? ' (' . $mail->Host . ')' : ''));
+				if($delivery_mode === 'auto') {
+					$serverMailFallbackAllowed = true;
+				}
+			}
+			else
+			{
+				$mail->SMTPAuth = false;
+				$mail->IsMail();
+				$default_system="1";
+				logLine('[INFO] Transport: server mail (auto fallback)');
+				if(IS_RAILWAY) {
+					logLine('[WARN] No SMTP configured. Railway server mail may fail without an external relay.');
+				}
 			}
 			if(!filter_var($from, FILTER_VALIDATE_EMAIL)) {
 				$fallbackFrom = '';
@@ -5535,7 +5563,7 @@ function switch_smtp()
 					if($resendHost && !$loginDomain) {
 						array_unshift($candidates, 'onboarding@resend.dev');
 					}
-					$candidates[] = 'no-reply@localhost.localdomain';
+					$candidates[] = FALLBACK_SENDER;
 					foreach($candidates as $candidate) {
 						if(filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
 							$fallbackFrom = $candidate;
@@ -5560,7 +5588,12 @@ function switch_smtp()
 					$from_base = $fallbackFrom;
 				}
 			}
+			$from = sanitizeEmailAddress($from);
+			if($from === '') {
+				$from = sanitizeEmailAddress(FALLBACK_SENDER);
+			}
 			$mail->From = $from;
+			applyTrustedMailSettings($mail, $from);
 			#$mail->addCustomHeader('List-Unsubscribe',preg_replace_callback('/(##([a-zA-Z0-9\-]+)\{([0-9]+)\}##)/', "generateRandomString", 'mailto:bounce##09-{3}##-##az-AZ-09-{15}##@'.explode('@',$from)[1].'?subject=list-unsubscribe'));
 			// SET DEBUG LVL
 			$mail->SMTPDebug = $debg;
@@ -5671,7 +5704,8 @@ function switch_smtp()
 					$message = preg_replace("/%5C%22/", "%22", $message);
 					$message = urldecode($message);
 					$message = stripslashes($message);
-					$subject = stripslashes($subject);
+					$subject = normalizeHeaderValue(stripslashes($subject));
+					$realname = sanitizeDisplayName($realname);
 
                     if ($encodety != "no") 
 					{
@@ -5721,7 +5755,13 @@ function switch_smtp()
                             ($txId ? ' [Transaction ID: ' . $txId . ']' : '')
                         );
 
-                        if ($default_system == "1") {
+                        if ($default_system == "1" || $serverMailFallbackAllowed) {
+                            if ($serverMailFallbackAllowed) {
+                                logLine('[WARN] SMTP failed in auto mode. Trying server mail fallback.');
+                                $mail->smtpClose();
+                                $mail->SMTPAuth = false;
+                                $mail->IsMail();
+                            }
                             $mail->IsMail();
                             if (!$mail->Send()) {
                                 $errInfo = trim($mail->ErrorInfo);
