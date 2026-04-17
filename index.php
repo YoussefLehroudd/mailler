@@ -1,4 +1,20 @@
 <?php
+require_once __DIR__ . '/config.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+$csrfToken = $_SESSION['csrf_token'];
+$delivery_mode = DEFAULT_TRANSPORT;
+if (!in_array($delivery_mode, array('auto', 'smtp', 'server'), true)) {
+    $delivery_mode = 'auto';
+}
+
 // Initialize default variables
 $message_base = "Message Here";
 $action = "";
@@ -244,6 +260,14 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
             overflow-y: auto;
             font-family: monospace;
             font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 6px;
         }
 
         @media (max-width: 768px) {
@@ -317,10 +341,22 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
         
         <div class="content">
             <form method="post" action="" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" id="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                 
                 <!-- SERVER SETUP -->
                 <div class="section">
                     <div class="section-title">Server Setup</div>
+                    <div class="form-group">
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <label for="delivery_mode" style="margin: 0; white-space: nowrap; min-width: 90px;">Mode</label>
+                            <select name="delivery_mode" id="delivery_mode" class="form-control" style="max-width: 280px;">
+                                <option value="auto" <?php if($delivery_mode === 'auto') echo 'selected'; ?>>Auto</option>
+                                <option value="smtp" <?php if($delivery_mode === 'smtp') echo 'selected'; ?>>SMTP only</option>
+                                <option value="server" <?php if($delivery_mode === 'server') echo 'selected'; ?>>Server mail only</option>
+                            </select>
+                        </div>
+                        <div class="help-text" id="deliveryHint">Auto uses SMTP when available, otherwise it falls back to server mail.</div>
+                    </div>
                     
                     <div class="two-column">
                         <!-- Left Column -->
@@ -642,6 +678,63 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
         }
 
         $(document).ready(function(){
+            const csrfToken = <?php echo json_encode($csrfToken); ?>;
+            const defaultDeliveryMode = <?php echo json_encode($delivery_mode); ?>;
+            let resultStreamBuffer = '';
+
+            function appendResultChunk(text) {
+                if (typeof text !== 'string' || text.length === 0) {
+                    return;
+                }
+
+                resultStreamBuffer += text;
+                $('#resultBox').text(resultStreamBuffer);
+
+                var resultBox = document.getElementById('resultBox');
+                resultBox.scrollTop = resultBox.scrollHeight;
+            }
+
+            function resetResultBox() {
+                resultStreamBuffer = '';
+                $('#resultBox').text('');
+            }
+
+            function updateDeliveryModeState() {
+                var mode = $('#delivery_mode').val() || defaultDeliveryMode;
+                var forceManualSender = mode === 'server';
+                var hint = 'Auto uses SMTP when available, otherwise it falls back to server mail.';
+
+                if (mode === 'smtp') {
+                    hint = 'SMTP only uses your SMTP list first, then environment SMTP when it is configured on Railway.';
+                } else if (mode === 'server') {
+                    hint = 'Server mail uses PHP mail()/local mail transport. On Railway this only works when the runtime supports mail sending.';
+                }
+
+                $('#deliveryHint').text(hint);
+
+                if (forceManualSender) {
+                    $('input[name=lase]').prop('checked', false);
+                    $('input[name=repaslog]').prop('checked', false);
+                }
+
+                $('input[name=lase]').prop('disabled', forceManualSender);
+                $('input[name=repaslog]').prop('disabled', forceManualSender);
+
+                if ($('input[name=lase]').prop('checked') && !forceManualSender) {
+                    $('#from').attr('disabled', 'disabled');
+                    $('#from').val('');
+                } else {
+                    $('#from').removeAttr('disabled');
+                }
+
+                if ($('input[name=repaslog]').prop('checked') && !forceManualSender) {
+                    $('#replyto').attr('disabled', 'disabled');
+                    $('#replyto').val('');
+                } else {
+                    $('#replyto').removeAttr('disabled');
+                }
+            }
+
             // Pattern Generator in Instruction
             $("#getPattern").click(function(){
                 if($("#gen_az").prop("checked") || $("#gen_AZ").prop("checked") || $("#gen_09").prop("checked") && $("#gen_length").val() != "") {
@@ -670,6 +763,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 
             // Load saved data
             loadFormData();
+            updateDeliveryModeState();
 
             // Clean up any legacy SMTP entries (e.g. undefined security values)
             sanitizeSmtpList({ skipSave: true, skipCounts: true });
@@ -734,23 +828,18 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 
             // Sender email as login
             $("input[name=lase]").click(function(){
-                if($('input[name=lase]').prop('checked')) {
-                    $('input[name=from]').attr('disabled','disabled');
-                    $('input[name=from]').val('');
-                } else {
-                    $('input[name=from]').removeAttr('disabled');
-                }
+                updateDeliveryModeState();
                 saveFormData();
             });
 
             // Reply-To as login
             $("input[name=repaslog]").click(function(){
-                if($('input[name=repaslog]').prop('checked')) {
-                    $('input[name=replyto]').attr('disabled','disabled');
-                    $('input[name=replyto]').val('');
-                } else {
-                    $('input[name=replyto]').removeAttr('disabled');
-                }
+                updateDeliveryModeState();
+                saveFormData();
+            });
+
+            $('#delivery_mode').on('change', function() {
+                updateDeliveryModeState();
                 saveFormData();
             });
 
@@ -875,6 +964,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     ssl_port: $('#ssl_port').val(),
                     user: $('#user').val(),
                     my_smtp: $('#my_smtp').val(),
+                    delivery_mode: $('#delivery_mode').val(),
                     nrotat: $('input[name=nrotat]').val(),
                     reconnect: $('input[name=reconnect]').val(),
                     smtp_timeout: $('#smtp_timeout').val(),
@@ -911,6 +1001,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     $('#ssl_port').val(formData.ssl_port || '587');
                     $('#user').val(formData.user || '');
                     $('#my_smtp').val(formData.my_smtp || '');
+                    $('#delivery_mode').val(formData.delivery_mode || defaultDeliveryMode);
                     sanitized = sanitizeSmtpList({ skipSave: true, skipCounts: true }) || sanitized;
                     $('#smtp_timeout').val(formData.smtp_timeout || '30');
                     $('input[name=nrotat]').val(formData.nrotat || '0');
@@ -934,10 +1025,6 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                         $('input[name=lase]').prop('checked', true);
                     }
                     
-                    if($('input[name=lase]').prop('checked')) {
-                        $('#from').attr('disabled','disabled');
-                    }
-                    
                     $('#replyto').val(formData.replyto || '');
                     
                     // Set repaslog checkbox - default to true if not set
@@ -948,10 +1035,6 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     }
                     
                     $('input[name=readingconf]').prop('checked', formData.readingconf || false);
-                    
-                    if($('input[name=repaslog]').prop('checked')) {
-                        $('#replyto').attr('disabled','disabled');
-                    }
                     
                     $('#epriority').val(formData.epriority || '');
                     $('#subject').val(formData.subject || 'Subject Here');
@@ -969,6 +1052,8 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     countSmtp();
                     saveFormData();
                 }
+
+                updateDeliveryModeState();
             }
 
             // Stop Sending Handler
@@ -979,14 +1064,10 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 $('#stopBtn').prop('disabled', true).text('Stopping...');
                 
                 // Send stop signal to backend
-                $.post('check_stop.php', { action: 'stop' }, function(response) {
-                    $('#resultBox').append('<br><p style="color: #dc3545; font-weight: bold;">Stop signal sent. Waiting for current email to complete...</p>');
-                    
-                    // Auto-scroll to bottom
-                    var resultBox = document.getElementById('resultBox');
-                    resultBox.scrollTop = resultBox.scrollHeight;
+                $.post('check_stop.php', { action: 'stop', csrf_token: csrfToken }, function(response) {
+                    appendResultChunk('\n[WARN] Stop signal sent. Waiting for the current email to finish.\n');
                 }).fail(function() {
-                    $('#resultBox').append('<br><p style="color: #dc3545;">Failed to send stop signal.</p>');
+                    appendResultChunk('\n[ERROR] Failed to send stop signal.\n');
                     $('#stopBtn').prop('disabled', false).text('Stop Sending');
                 });
             });
@@ -997,7 +1078,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                 
                 // Show result section
                 $('#resultSection').show();
-                $('#resultBox').html('');
+                resetResultBox();
                 
                 // Disable send button and show stop button
                 $('#sendBtn').prop('disabled', true).text('Sending...');
@@ -1012,7 +1093,9 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 
                 var formData = new FormData();
                 formData.append('action', 'send');
+                formData.append('csrf_token', csrfToken);
                 formData.append('dbg', '0');
+                formData.append('delivery_mode', $('#delivery_mode').val());
                 formData.append('from', $('input[name=from]').val());
                 formData.append('realname', $('input[name=realname]').val());
                 formData.append('replyto', $('input[name=replyto]').val());
@@ -1055,12 +1138,20 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     method: 'POST',
                     body: formData
                 }).then(response => {
+                    if(!response.ok || !response.body) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder();
                     
                     function readStream() {
                         reader.read().then(({done, value}) => {
                             if (done) {
+                                const finalChunk = decoder.decode();
+                                if(finalChunk) {
+                                    appendResultChunk(finalChunk);
+                                }
                                 $('#sendBtn').prop('disabled', false).text('Send message');
                                 $('#stopBtn').hide();
                                 return;
@@ -1068,11 +1159,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                             
                             // Decode and append new content
                             const text = decoder.decode(value, {stream: true});
-                            $('#resultBox').append(text);
-                            
-                            // Auto-scroll to bottom
-                            var resultBox = document.getElementById('resultBox');
-                            resultBox.scrollTop = resultBox.scrollHeight;
+                            appendResultChunk(text);
                             
                             // Continue reading
                             readStream();
@@ -1081,7 +1168,8 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                     
                     readStream();
                 }).catch(error => {
-                    $('#resultBox').html('<p style="color: #dc3545;">Error: ' + error + '</p>');
+                    resetResultBox();
+                    appendResultChunk('[ERROR] ' + error);
                     $('#sendBtn').prop('disabled', false).text('Send message');
                     $('#stopBtn').hide();
                 });

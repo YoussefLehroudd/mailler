@@ -1,4 +1,10 @@
 <?php
+require_once __DIR__ . '/config.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 // Enable error reporting for debugging
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -6,6 +12,11 @@ error_reporting(E_ALL);
 
 // Set unlimited execution time for long-running email operations
 set_time_limit(0);
+
+function isValidCsrfRequestToken($token)
+{
+    return isset($_SESSION['csrf_token']) && is_string($token) && hash_equals($_SESSION['csrf_token'], $token);
+}
 
 function randString($consonants) {
     $length=rand(12,25);
@@ -65,8 +76,19 @@ $lase="";
 $reading=false;
 $repaslog=false;
 $uploadfile="";
+$delivery_mode = DEFAULT_TRANSPORT;
+if(!in_array($delivery_mode, array('auto', 'smtp', 'server'), true)) {
+    $delivery_mode = 'auto';
+}
 
 if(!empty($_POST)) {	  
+    $csrfToken = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+    if(!isValidCsrfRequestToken($csrfToken)) {
+        http_response_code(403);
+        echo "[ERROR] Invalid request token." . PHP_EOL;
+        exit;
+    }
+
     $debg = isset($_POST['dbg']) ? lrtrim($_POST['dbg']) : '0';
     if(!empty($_POST['from'])) {
         $from=lrtrim($_POST['from']);
@@ -85,6 +107,12 @@ if(!empty($_POST)) {
     $realname_base = isset($_POST['realname']) ? lrtrim($_POST['realname']) : 'Support';
     $contenttype = isset($_POST['contenttype']) ? lrtrim($_POST['contenttype']) : '';
     $encodety = isset($_POST['encodety']) ? $_POST['encodety'] : 'no';
+    if(isset($_POST['delivery_mode'])) {
+        $delivery_mode = strtolower(lrtrim($_POST['delivery_mode']));
+        if(!in_array($delivery_mode, array('auto', 'smtp', 'server'), true)) {
+            $delivery_mode = 'auto';
+        }
+    }
     if(!empty($_POST['pause']))
         $pause=$_POST['pause'];
     if(!empty($_POST['replyto']))
@@ -5028,6 +5056,208 @@ function lrtrim($string)
 {
 	return stripslashes(ltrim(rtrim($string)));
 }
+
+function normalizeHeaderValue($value)
+{
+    $value = (string) $value;
+    $value = str_replace(array("\r", "\n"), ' ', $value);
+    $value = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value);
+    $value = preg_replace('/\s{2,}/', ' ', $value);
+    return trim($value);
+}
+
+function sanitizeEmailAddress($email)
+{
+    $email = normalizeHeaderValue($email);
+    if ($email === '') {
+        return '';
+    }
+
+    return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
+}
+
+function sanitizeDisplayName($name)
+{
+    $name = normalizeHeaderValue($name);
+    if ($name === '') {
+        return FALLBACK_NAME;
+    }
+
+    if (function_exists('mb_substr')) {
+        $name = mb_substr($name, 0, 190);
+    } else {
+        $name = substr($name, 0, 190);
+    }
+
+    return $name;
+}
+
+function normalizeSecurityMode($securityMode, $port = '')
+{
+    $securityMode = strtoupper(trim((string) $securityMode));
+    if ($securityMode === 'NONE') {
+        $securityMode = 'NON';
+    } elseif ($securityMode === 'STARTTLS' || $securityMode === 'START_TLS' || $securityMode === 'UNDEFINED') {
+        $securityMode = 'TLS';
+    }
+
+    if ($securityMode !== 'SSL' && $securityMode !== 'TLS' && $securityMode !== 'NON' && $securityMode !== '') {
+        $portCandidate = trim((string) $port);
+        if ($portCandidate === '465') {
+            $securityMode = 'SSL';
+        } elseif ($portCandidate === '587') {
+            $securityMode = 'TLS';
+        } else {
+            $securityMode = 'NON';
+        }
+    }
+
+    if (($securityMode === '' || $securityMode === 'NON') && trim((string) $port) === '587') {
+        $securityMode = 'TLS';
+    }
+
+    return $securityMode;
+}
+
+function buildConfiguredSmtpLine()
+{
+    if (SMTP_HOST === '') {
+        return '';
+    }
+
+    $port = SMTP_PORT !== '' ? SMTP_PORT : '587';
+    $security = normalizeSecurityMode(SMTP_SECURE, $port);
+
+    return implode('|', array(
+        trim((string) SMTP_HOST),
+        trim((string) $port),
+        trim((string) SMTP_USER),
+        (string) SMTP_PASS,
+        $security,
+        'NOBCC',
+    ));
+}
+
+function getSessionScopedFilePath($prefix)
+{
+    $sessionId = session_id();
+    if ($sessionId === '') {
+        $sessionId = 'guest';
+    }
+
+    return sys_get_temp_dir() . DIRECTORY_SEPARATOR . $prefix . '_' . sha1($sessionId) . '.json';
+}
+
+function getStopFlagFilePath()
+{
+    return preg_replace('/\.json$/', '.flag', getSessionScopedFilePath('mailler_stop'));
+}
+
+function getRateLimitFilePath()
+{
+    $clientIdentity = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? session_id();
+    if (!is_string($clientIdentity) || trim($clientIdentity) === '') {
+        $clientIdentity = 'guest';
+    }
+
+    return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mailler_rate_' . sha1($clientIdentity) . '.json';
+}
+
+function enforceRateLimit($requestedEmails)
+{
+    $requestedEmails = max(0, (int) $requestedEmails);
+    $limit = max(0, (int) MAX_EMAILS_PER_MINUTE);
+    $window = max(1, (int) RATE_LIMIT_WINDOW);
+
+    if ($limit === 0 || $requestedEmails === 0) {
+        return array(true, '');
+    }
+
+    $file = getRateLimitFilePath();
+    $now = time();
+    $timestamps = array();
+
+    if (file_exists($file)) {
+        $decoded = json_decode((string) file_get_contents($file), true);
+        if (is_array($decoded)) {
+            foreach ($decoded as $timestamp) {
+                $timestamp = (int) $timestamp;
+                if ($timestamp >= ($now - $window)) {
+                    $timestamps[] = $timestamp;
+                }
+            }
+        }
+    }
+
+    if ((count($timestamps) + $requestedEmails) > $limit) {
+        return array(false, 'Rate limit exceeded. Max ' . $limit . ' emails per ' . $window . ' seconds.');
+    }
+
+    for ($i = 0; $i < $requestedEmails; $i++) {
+        $timestamps[] = $now;
+    }
+
+    file_put_contents($file, json_encode($timestamps));
+    return array(true, '');
+}
+
+function logLine($message = '')
+{
+    echo rtrim((string) $message, "\r\n") . PHP_EOL;
+    if (ob_get_level()) {
+        ob_flush();
+    }
+    flush();
+}
+
+function getDomainFromEmail($email)
+{
+    $email = sanitizeEmailAddress($email);
+    if ($email === '' || strpos($email, '@') === false) {
+        return '';
+    }
+
+    return strtolower(substr(strrchr($email, '@'), 1));
+}
+
+function applyTrustedMailSettings($mail, $fromEmail)
+{
+    $mail->clearCustomHeaders();
+
+    $senderDomain = getDomainFromEmail($fromEmail);
+    if ($senderDomain !== '') {
+        $mail->Hostname = $senderDomain;
+    } else {
+        $mail->Hostname = mailler_default_sender_domain();
+    }
+
+    $bounceEmail = sanitizeEmailAddress(BOUNCE_EMAIL);
+    if ($bounceEmail !== '') {
+        $mail->Sender = $bounceEmail;
+        $mail->ReturnPath = $bounceEmail;
+    } elseif ($fromEmail !== '') {
+        $mail->Sender = $fromEmail;
+        $mail->ReturnPath = $fromEmail;
+    }
+
+    $mail->addCustomHeader('X-Auto-Response-Suppress', 'All', true);
+
+    if (DKIM_DOMAIN !== '' && DKIM_SELECTOR !== '' && DKIM_PRIVATE_KEY !== '') {
+        $mail->DKIM_domain = DKIM_DOMAIN;
+        $mail->DKIM_selector = DKIM_SELECTOR;
+        $mail->DKIM_passphrase = DKIM_PASSPHRASE;
+        $mail->DKIM_identity = DKIM_IDENTITY !== '' ? DKIM_IDENTITY : $fromEmail;
+
+        if (strpos(DKIM_PRIVATE_KEY, '-----BEGIN') !== false) {
+            $mail->DKIM_private_string = DKIM_PRIVATE_KEY;
+            $mail->DKIM_private = '';
+        } else {
+            $mail->DKIM_private = DKIM_PRIVATE_KEY;
+            $mail->DKIM_private_string = '';
+        }
+    }
+}
+
 // REPLACE LAST OCCURENCE OF STRING
 function str_lreplace($search, $replace, $subject)
 {
@@ -5063,7 +5293,7 @@ function generateRandomString($matches)
 // CHECK STOP FLAG FUNCTION
 function shouldStopSending()
 {
-	$stopFlagFile = __DIR__ . '/stop_flag.txt';
+	$stopFlagFile = getStopFlagFilePath();
 	return file_exists($stopFlagFile) && file_get_contents($stopFlagFile) === '1';
 }
 // WAITING FUNCTION
@@ -5071,9 +5301,9 @@ function pause($pause,$mail)
 {
 	$sec=doubleval($pause);
 	$mail->SmtpClose();
-	echo "\n\n<br><br>############################### WAITING $sec SEC TO CONTINUE SENDING ###############################<br><br>\n\n";
-	if (ob_get_level()) ob_flush();
-	flush();
+	logLine('');
+	logLine('############################### WAITING ' . $sec . ' SEC TO CONTINUE SENDING ###############################');
+	logLine('');
 	sleep($sec);
 }
 // SMTP SWITCH
@@ -5121,10 +5351,9 @@ function switch_smtp()
 				} else {
 					if(!isset($loginNoticeShown[$curentsmtp])) {
 						$noticeText = $loginDomain
-							? "Detected SMTP domain login: " . htmlspecialchars($loginDomain, ENT_QUOTES, 'UTF-8') . " - generating sender address automatically."
-							: "Skipped invalid sender address from SMTP login: " . htmlspecialchars($loginValue, ENT_QUOTES, 'UTF-8');
-						$color = $loginDomain ? '#17a2b8' : '#dc3545';
-						echo "<br><span style=\"color:$color;\">$noticeText</span><br>";
+							? "Detected SMTP domain login: " . $loginDomain . " - generating sender address automatically."
+							: "Skipped invalid sender address from SMTP login: " . $loginValue;
+						logLine('[INFO] ' . $noticeText);
 						$loginNoticeShown[$curentsmtp] = true;
 					}
 					$selectedFrom = '';
@@ -5165,7 +5394,7 @@ function switch_smtp()
 						if($resendHost && !$loginDomain) {
 							array_unshift($candidates, 'onboarding@resend.dev');
 						}
-						$candidates[] = 'no-reply@localhost.localdomain';
+						$candidates[] = FALLBACK_SENDER;
 						foreach($candidates as $candidate) {
 							if(filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
 								$selectedFrom = $candidate;
@@ -5173,11 +5402,11 @@ function switch_smtp()
 							}
 						}
 						if(!empty($selectedFrom) && !isset($autoFromNotified[$curentsmtp])) {
-							$notice = "Auto-generated sender address: " . htmlspecialchars($selectedFrom, ENT_QUOTES, 'UTF-8');
+							$notice = "Auto-generated sender address: " . $selectedFrom;
 							if($resendHost && !$loginDomain && stripos($selectedFrom, '@resend.dev') !== false) {
 								$notice .= " (Verify your domain in Resend to use a custom From address)";
 							}
-							echo "<br><span style=\"color:#17a2b8;\">$notice</span><br>";
+							logLine('[INFO] ' . $notice);
 							$autoFromNotified[$curentsmtp] = true;
 						}
 					}
@@ -5188,30 +5417,7 @@ function switch_smtp()
 				}
 			}
 	
-			$securityMode = '';
-			if(isset($smtprot[4])) {
-				$securityMode = strtoupper(trim($smtprot[4]));
-				if($securityMode === 'NONE') {
-					$securityMode = 'NON';
-				} else if($securityMode === 'STARTTLS' || $securityMode === 'START_TLS') {
-					$securityMode = 'TLS';
-				} else if($securityMode === 'UNDEFINED') {
-					$securityMode = 'TLS';
-				}
-			}
-			if($securityMode !== 'SSL' && $securityMode !== 'TLS' && $securityMode !== 'NON' && $securityMode !== '') {
-				$portCandidate = isset($smtprot[1]) ? trim((string)$smtprot[1]) : '';
-				if($portCandidate === '465') {
-					$securityMode = 'SSL';
-				} else if($portCandidate === '587') {
-					$securityMode = 'TLS';
-				} else {
-					$securityMode = '';
-				}
-			}
-			if(($securityMode === '' || $securityMode === 'NON') && $mail->Port == 587) {
-				$securityMode = 'TLS';
-			}
+			$securityMode = normalizeSecurityMode(isset($smtprot[4]) ? $smtprot[4] : '', $mail->Port);
 			if($securityMode === 'SSL')
 				$mail->SMTPSecure  = "ssl";
 			else if($securityMode === 'TLS')

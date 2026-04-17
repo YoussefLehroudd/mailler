@@ -1,13 +1,39 @@
 <?php
 // check_stop.php - Stop flag management API
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 header('Content-Type: application/json');
 
-$stopFlagFile = __DIR__ . '/stop_flag.txt';
+function getStopFlagFilePath()
+{
+    $sessionId = session_id();
+    if ($sessionId === '') {
+        $sessionId = 'guest';
+    }
+
+    return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mailler_stop_' . sha1($sessionId) . '.flag';
+}
+
+function isValidCsrfToken($token)
+{
+    return isset($_SESSION['csrf_token']) && is_string($token) && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+$stopFlagFile = getStopFlagFilePath();
 
 // Handle POST request to set stop flag
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = isset($_POST['action']) ? $_POST['action'] : '';
+    $csrfToken = $_POST['csrf_token'] ?? '';
+
+    if (!isValidCsrfToken($csrfToken)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
+        exit;
+    }
     
     if ($action === 'stop') {
         // Set stop flag

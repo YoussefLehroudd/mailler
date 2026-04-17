@@ -4,6 +4,16 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
+function getStopFlagFilePath()
+{
+    $sessionId = session_id();
+    if ($sessionId === '') {
+        $sessionId = 'guest';
+    }
+
+    return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mailler_stop_' . sha1($sessionId) . '.flag';
+}
+
 // Real-time streaming email sending - NO BUFFERING
 
 // Disable ALL output buffering at PHP level
@@ -18,18 +28,14 @@ while (@ob_end_flush());
 ob_implicit_flush(true);
 
 // Set headers to prevent buffering
-header('Content-Type: text/html; charset=UTF-8');
+header('Content-Type: text/plain; charset=UTF-8');
 header('Cache-Control: no-cache, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
 header('X-Accel-Buffering: no');
 
-// Pad output (1KB) to overcome browser buffering threshold
-echo str_repeat(' ', 1024);
-flush();
-
 // Initialize stop flag - clear any existing stop signal
-$stopFlagFile = __DIR__ . '/stop_flag.txt';
+$stopFlagFile = getStopFlagFilePath();
 if(file_exists($stopFlagFile)) {
     unlink($stopFlagFile);
 }
