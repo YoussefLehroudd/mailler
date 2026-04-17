@@ -3,7 +3,18 @@
     "description": "PHP Mailer Application",
     "type": "project",
     "require": {
-        "php": "^8.2"
+        "php": "^8.2",
+        "phpmailer/phpmailer": "^6.9"
     },
-    "license": "proprietary"
+    "license": "proprietary",
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
 }
