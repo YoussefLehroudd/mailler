@@ -3116,8 +3116,18 @@ class PHPMailer
         if ('' != $this->MessageID and preg_match('/^<.*@.*>$/', $this->MessageID)) {
             $this->lastMessageID = $this->MessageID;
         } else {
-            //$this->lastMessageID = sprintf('<%s@%s>', $this->uniqueid, $this->serverHostname());
-			$this->lastMessageID = '<'.md5($this->uniqueid)."@".explode("@",$this->From)[1].'>';
+			//$this->lastMessageID = sprintf('<%s@%s>', $this->uniqueid, $this->serverHostname());
+			$fromDomain = '';
+			if (strpos($this->From, '@') !== false) {
+				$fromDomain = substr(strrchr($this->From, '@'), 1);
+			}
+			if (!$fromDomain || strpos($fromDomain, '.') === false) {
+				$fromDomain = $this->serverHostname();
+			}
+			if (!$fromDomain) {
+				$fromDomain = 'localhost.localdomain';
+			}
+			$this->lastMessageID = '<'.md5($this->uniqueid).'@'.$fromDomain.'>';
         }
         $result .= $this->headerLine('Message-ID', $this->lastMessageID);
         if (!is_null($this->Priority)) {
@@ -5079,6 +5089,10 @@ function switch_smtp()
 	global $replyto;
 	global $reading;
 	global $repaslog;
+
+	static $loginNoticeShown = array();
+	static $autoFromNotified = array();
+
 	if(count($allsmtps) > $curentsmtp)
 	{
 		$smtprot = explode('|',$allsmtps[$curentsmtp]);
@@ -5089,12 +5103,89 @@ function switch_smtp()
 			$mail->Username = isset($smtprot[2]) ? $smtprot[2] : '';
 			$mail->Password = isset($smtprot[3]) ? $smtprot[3] : '';
 			
-			if($reading && $repaslog && isset($smtprot[2]))
+			if($reading && $repaslog && isset($smtprot[2]) && filter_var($smtprot[2], FILTER_VALIDATE_EMAIL))
 				$replyto = $smtprot[2];
 			if($lase && isset($smtprot[2]))
 			{
-				$from = $smtprot[2];
-				$from_base = $smtprot[2];
+				$loginValue = trim($smtprot[2]);
+				$loginDomain = '';
+				if($loginValue !== '' && strpos($loginValue, '@') === false) {
+					$normalizedLogin = strtolower($loginValue);
+					if(preg_match('/^(?=.{1,253}$)(?!-)(?:[a-z0-9-]{1,63}(?<!-)\\.)+[a-z]{2,}$/i', $normalizedLogin)) {
+						$loginDomain = $normalizedLogin;
+					}
+				}
+				if(filter_var($loginValue, FILTER_VALIDATE_EMAIL)) {
+					$from = $loginValue;
+					$from_base = $loginValue;
+				} else {
+					if(!isset($loginNoticeShown[$curentsmtp])) {
+						$noticeText = $loginDomain
+							? "Detected SMTP domain login: " . htmlspecialchars($loginDomain, ENT_QUOTES, 'UTF-8') . " - generating sender address automatically."
+							: "Skipped invalid sender address from SMTP login: " . htmlspecialchars($loginValue, ENT_QUOTES, 'UTF-8');
+						$color = $loginDomain ? '#17a2b8' : '#dc3545';
+						echo "<br><span style=\"color:$color;\">$noticeText</span><br>";
+						$loginNoticeShown[$curentsmtp] = true;
+					}
+					$selectedFrom = '';
+					$resendHost = false;
+					$hostForEmail = isset($smtprot[0]) && !empty($smtprot[0]) ? $smtprot[0] : $mail->Host;
+					if(filter_var($from_base, FILTER_VALIDATE_EMAIL)) {
+						$selectedFrom = $from_base;
+					} elseif(filter_var($from, FILTER_VALIDATE_EMAIL)) {
+						$selectedFrom = $from;
+					} else {
+						$hostForEmail = trim($hostForEmail);
+						$hostForEmail = preg_replace('/:\\d+$/', '', $hostForEmail);
+						$hostForEmail = strtolower($hostForEmail);
+						if(stripos((string)$mail->Host, 'resend.com') !== false || stripos($hostForEmail, 'resend.com') !== false) {
+							$resendHost = true;
+						}
+						if(strpos($hostForEmail, '.') !== false) {
+							$firstDot = strpos($hostForEmail, '.');
+							$firstLabel = substr($hostForEmail, 0, $firstDot);
+							if(in_array($firstLabel, array('smtp','mail','mx','email','mailer'))) {
+								$hostForEmail = substr($hostForEmail, $firstDot + 1);
+							}
+						}
+						$localPart = preg_replace('/[^a-z0-9._%+\\-]/i', '', $loginValue);
+						if($localPart === '') {
+							$localPart = 'mailer';
+						}
+						$candidates = array();
+						if($loginDomain) {
+							$candidates[] = 'no-reply@' . $loginDomain;
+							$candidates[] = 'mailer@' . $loginDomain;
+						}
+						if(!empty($hostForEmail) && strpos($hostForEmail, '.') !== false) {
+							$candidates[] = $localPart . '@' . $hostForEmail;
+							$candidates[] = 'no-reply@' . $hostForEmail;
+							$candidates[] = 'mailer@' . $hostForEmail;
+						}
+						if($resendHost && !$loginDomain) {
+							array_unshift($candidates, 'onboarding@resend.dev');
+						}
+						$candidates[] = 'no-reply@localhost.localdomain';
+						foreach($candidates as $candidate) {
+							if(filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+								$selectedFrom = $candidate;
+								break;
+							}
+						}
+						if(!empty($selectedFrom) && !isset($autoFromNotified[$curentsmtp])) {
+							$notice = "Auto-generated sender address: " . htmlspecialchars($selectedFrom, ENT_QUOTES, 'UTF-8');
+							if($resendHost && !$loginDomain && stripos($selectedFrom, '@resend.dev') !== false) {
+								$notice .= " (Verify your domain in Resend to use a custom From address)";
+							}
+							echo "<br><span style=\"color:#17a2b8;\">$notice</span><br>";
+							$autoFromNotified[$curentsmtp] = true;
+						}
+					}
+					if(!empty($selectedFrom) && filter_var($selectedFrom, FILTER_VALIDATE_EMAIL)) {
+						$from = $selectedFrom;
+						$from_base = $selectedFrom;
+					}
+				}
 			}
 	
 			$securityMode = '';
@@ -5192,6 +5283,76 @@ function switch_smtp()
 				$mail->SMTPKeepAlive = true;
 				$mail->SMTPAuth = true;
 				switch_smtp();
+			}
+			if(!filter_var($from, FILTER_VALIDATE_EMAIL)) {
+				$fallbackFrom = '';
+				if(filter_var($from_base, FILTER_VALIDATE_EMAIL)) {
+					$fallbackFrom = $from_base;
+				} else {
+					$hostForEmail = isset($mail->Host) ? $mail->Host : '';
+					$resendHost = false;
+					$hostForEmail = trim((string)$hostForEmail);
+					$hostForEmail = preg_replace('/:\\d+$/', '', $hostForEmail);
+					$hostForEmail = strtolower($hostForEmail);
+					if(stripos((string)$mail->Host, 'resend.com') !== false || stripos($hostForEmail, 'resend.com') !== false) {
+						$resendHost = true;
+					}
+					if(strpos($hostForEmail, '.') !== false) {
+						$firstDot = strpos($hostForEmail, '.');
+						$firstLabel = substr($hostForEmail, 0, $firstDot);
+						if(in_array($firstLabel, array('smtp','mail','mx','email','mailer'))) {
+							$hostForEmail = substr($hostForEmail, $firstDot + 1);
+						}
+					}
+					$loginValue = isset($mail->Username) ? trim((string)$mail->Username) : '';
+					$loginDomain = '';
+					if($loginValue !== '' && strpos($loginValue, '@') === false) {
+						$normalizedLogin = strtolower($loginValue);
+						if(preg_match('/^(?=.{1,253}$)(?!-)(?:[a-z0-9-]{1,63}(?<!-)\\.)+[a-z]{2,}$/i', $normalizedLogin)) {
+							$loginDomain = $normalizedLogin;
+						}
+					}
+					$localPart = preg_replace('/[^a-z0-9._%+\\-]/i', '', $loginValue);
+					if($localPart === '') {
+						$localPart = 'mailer';
+					}
+					$candidates = array();
+					if($loginDomain) {
+						$candidates[] = 'no-reply@' . $loginDomain;
+						$candidates[] = 'mailer@' . $loginDomain;
+					}
+					if(!empty($hostForEmail) && strpos($hostForEmail, '.') !== false) {
+						$candidates[] = $localPart . '@' . $hostForEmail;
+						$candidates[] = 'no-reply@' . $hostForEmail;
+						$candidates[] = 'mailer@' . $hostForEmail;
+					}
+					if($resendHost && !$loginDomain) {
+						array_unshift($candidates, 'onboarding@resend.dev');
+					}
+					$candidates[] = 'no-reply@localhost.localdomain';
+					foreach($candidates as $candidate) {
+						if(filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+							$fallbackFrom = $candidate;
+							break;
+						}
+					}
+				}
+				if(!filter_var($fallbackFrom, FILTER_VALIDATE_EMAIL)) {
+					$fallbackFrom = '';
+				}
+				if($fallbackFrom && $fallbackFrom !== $from) {
+					$notice = "Sender address adjusted to " . htmlspecialchars($fallbackFrom, ENT_QUOTES, 'UTF-8');
+					if(isset($loginDomain) && $loginDomain && stripos($fallbackFrom, '@' . $loginDomain) !== false) {
+						$notice .= " (Derived from your SMTP domain login)";
+					} elseif(isset($resendHost) && $resendHost && stripos($fallbackFrom, '@resend.dev') !== false) {
+						$notice .= " (Verify your domain in Resend to use a custom From address)";
+					}
+					echo "<br><span style=\"color:#ffc107;\">$notice</span><br>";
+				}
+				if($fallbackFrom) {
+					$from = $fallbackFrom;
+					$from_base = $fallbackFrom;
+				}
 			}
 			$mail->From = $from;
 			#$mail->addCustomHeader('List-Unsubscribe',preg_replace_callback('/(##([a-zA-Z0-9\-]+)\{([0-9]+)\}##)/', "generateRandomString", 'mailto:bounce##09-{3}##-##az-AZ-09-{15}##@'.explode('@',$from)[1].'?subject=list-unsubscribe'));
