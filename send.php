@@ -4,7 +4,7 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
-function getStopFlagFilePath()
+function sendStopFlagFilePath()
 {
     $sessionId = session_id();
     if ($sessionId === '') {
@@ -35,7 +35,7 @@ header('Expires: 0');
 header('X-Accel-Buffering: no');
 
 // Initialize stop flag - clear any existing stop signal
-$stopFlagFile = getStopFlagFilePath();
+$stopFlagFile = sendStopFlagFilePath();
 if(file_exists($stopFlagFile)) {
     unlink($stopFlagFile);
 }
