@@ -682,12 +682,37 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
             const defaultDeliveryMode = <?php echo json_encode($delivery_mode); ?>;
             let resultStreamBuffer = '';
 
+            function normalizeResultChunk(text) {
+                if (typeof text !== 'string' || text.length === 0) {
+                    return '';
+                }
+
+                if (text.indexOf('<') === -1 && text.indexOf('&') === -1) {
+                    return text;
+                }
+
+                var normalized = text
+                    .replace(/<br\s*\/?>/gi, '\n')
+                    .replace(/<\/div\s*>/gi, '\n')
+                    .replace(/<\/p\s*>/gi, '\n')
+                    .replace(/<\/li\s*>/gi, '\n');
+
+                var temp = document.createElement('div');
+                temp.innerHTML = normalized;
+
+                var parsed = temp.textContent || temp.innerText || '';
+                parsed = parsed.replace(/\u00a0/g, ' ');
+                parsed = parsed.replace(/\n{3,}/g, '\n\n');
+
+                return parsed;
+            }
+
             function appendResultChunk(text) {
                 if (typeof text !== 'string' || text.length === 0) {
                     return;
                 }
 
-                resultStreamBuffer += text;
+                resultStreamBuffer += normalizeResultChunk(text);
                 $('#resultBox').text(resultStreamBuffer);
 
                 var resultBox = document.getElementById('resultBox');

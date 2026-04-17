@@ -5439,8 +5439,8 @@ function switch_smtp()
 	{
 		if (!$from && !$subject && !$message && !$emaillist)
 		{
-			print "<script>alert('PLEASE FILL ALL FIELDS BEFORE SENDING YOUR MESSAGE.'); </script>";
-			die();	
+			logLine('[ERROR] Please fill all required fields before sending your message.');
+			exit;	
 		}
 		else
 		{
@@ -5547,13 +5547,13 @@ function switch_smtp()
 					$fallbackFrom = '';
 				}
 				if($fallbackFrom && $fallbackFrom !== $from) {
-					$notice = "Sender address adjusted to " . htmlspecialchars($fallbackFrom, ENT_QUOTES, 'UTF-8');
+					$notice = "Sender address adjusted to " . $fallbackFrom;
 					if(isset($loginDomain) && $loginDomain && stripos($fallbackFrom, '@' . $loginDomain) !== false) {
 						$notice .= " (Derived from your SMTP domain login)";
 					} elseif(isset($resendHost) && $resendHost && stripos($fallbackFrom, '@resend.dev') !== false) {
 						$notice .= " (Verify your domain in Resend to use a custom From address)";
 					}
-					echo "<br><span style=\"color:#ffc107;\">$notice</span><br>";
+					logLine('[WARN] ' . $notice);
 				}
 				if($fallbackFrom) {
 					$from = $fallbackFrom;
@@ -5588,12 +5588,12 @@ function switch_smtp()
 			{
 				// CHECK STOP FLAG
 				if(shouldStopSending()) {
-					echo "<br><br><b style=\"color:#dc3545;\">############################### SENDING STOPPED BY USER ###############################</b><br><br>";
-					if (ob_get_level()) ob_flush();
-					flush();
+					logLine('');
+					logLine('############################### SENDING STOPPED BY USER ###############################');
+					logLine('');
 					$mail->SmtpClose();
 					// Clean up stop flag
-					$stopFlagFile = __DIR__ . '/stop_flag.txt';
+					$stopFlagFile = getStopFlagFilePath();
 					if(file_exists($stopFlagFile)) {
 						unlink($stopFlagFile);
 					}
@@ -5626,18 +5626,14 @@ function switch_smtp()
 					if($x % intval($nbcc)  != 0 && $x <= $numemails)
 					{
 						$mail->addBCC("$to");
-						print "<span style=\"color:red;\">Line $x </span> : Sending mail to $to<br>";
-						if (ob_get_level()) ob_flush();
-						flush();
+						logLine("Line $x: Queueing BCC mail to $to");
 						if($x % intval($nbcc) != 0 && $x == $numemails)
 							$send=true;
 					}
 					else
 					{
 						$mail->addBCC("$to");
-						print "<span style=\"color:red;\">Line $x </span> : Sending mail to $to<br>";
-						if (ob_get_level()) ob_flush();
-						flush();
+						logLine("Line $x: Queueing BCC mail to $to");
 						$send = true;
 					}
 				}
@@ -5646,9 +5642,7 @@ function switch_smtp()
 					$mail->clearAddresses();
 					$mail->AddAddress("$to");
 					$send=true;
-					print "<span style=\"color:red;\">Line $x </span> : Sending mail to $to.......";
-					if (ob_get_level()) ob_flush();
-					flush();
+					logLine("Line $x: Sending mail to $to");
 				}
 				//END//
 				
@@ -5720,40 +5714,31 @@ function switch_smtp()
                             }
                         }
 
-                        echo '<b style="color:#D4001A;">FAILED !!</b><br>
-                            <div style="color:#D4001A; margin-top:4px;">
-                                [Error Details: ' . htmlspecialchars($errInfo, ENT_QUOTES, 'UTF-8') . ']
-                                ' . htmlspecialchars($smtpErr, ENT_QUOTES, 'UTF-8') .
-                                ($txId ? ' [Transaction ID: ' . htmlspecialchars($txId, ENT_QUOTES, 'UTF-8') . ']' : '') . '
-                            </div><br>';
-
-                        if (ob_get_level()) ob_flush();
-                        flush();
+                        logLine('FAILED');
+                        logLine(
+                            '[Error Details: ' . $errInfo . ']' .
+                            $smtpErr .
+                            ($txId ? ' [Transaction ID: ' . $txId . ']' : '')
+                        );
 
                         if ($default_system == "1") {
                             $mail->IsMail();
                             if (!$mail->Send()) {
                                 $errInfo = trim($mail->ErrorInfo);
-                                echo '<b style="color:#D4001A;">FAILED !!</b><br>
-                                    <div style="color:#D4001A;">[mail() Error: ' . htmlspecialchars($errInfo, ENT_QUOTES, 'UTF-8') . ']</div><br>';
-                                if (ob_get_level()) ob_flush();
-                                flush();
+                                logLine('FAILED');
+                                logLine('[mail() Error: ' . $errInfo . ']');
                             } else {
                                 if ($isbcc)
-                                    echo '# BCC EMAIL <span style="color:red;">NUMBER ' . $nm . '</span> SENT: <b style="color:#28a745;">OK ✅</b><br>';
+                                    logLine('# BCC EMAIL NUMBER ' . $nm . ' SENT: OK');
                                 else
-                                    echo '<b style="color:#28a745;">EMAIL SENT SUCCESSFULLY ✅</b><br>';
-                                if (ob_get_level()) ob_flush();
-                                flush();
+                                    logLine('EMAIL SENT SUCCESSFULLY');
                             }
                         }
                     } else {
                         if ($isbcc)
-                            echo '# BCC EMAIL <span style="color:red;">NUMBER ' . $nm . '</span> SENT: <b style="color:#28a745;">OK ✅</b><br>';
+                            logLine('# BCC EMAIL NUMBER ' . $nm . ' SENT: OK');
                         else
-                            echo '<b style="color:#28a745;">EMAIL SENT SUCCESSFULLY ✅</b><br>';
-                        if (ob_get_level()) ob_flush();
-                        flush();
+                            logLine('EMAIL SENT SUCCESSFULLY');
                     }
 				}
 				//END//
@@ -5796,12 +5781,12 @@ function switch_smtp()
 							
 							// Reconnect to new SMTP server
 							if(!$mail->smtpConnect($mail->SMTPOptions)) {
-								echo "<br><span style=\"color:#dc3545;\">Failed to connect to SMTP ".($curentsmtp+1)."</span><br>";
+								logLine('Failed to connect to SMTP ' . ($curentsmtp + 1));
 							} else {
-								echo "\n<br><span style=\"color:red;\">##############</span><b>  ROTATE TO SMTP ".($curentsmtp+1)." IP: ".$mail->Host."</b><span style=\"color:red;\"> ##############</span><br><br>\n";
+								logLine('');
+								logLine('############## ROTATE TO SMTP ' . ($curentsmtp + 1) . ' IP: ' . $mail->Host . ' ##############');
+								logLine('');
 							}
-							if (ob_get_level()) ob_flush();
-							flush();
 						}
 					}
 					//END//
