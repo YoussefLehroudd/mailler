@@ -80,6 +80,18 @@ if (!defined('SMTP_SECURE')) {
 if (!defined('DEFAULT_TRANSPORT')) {
     define('DEFAULT_TRANSPORT', strtolower((string) mailler_env(array('DEFAULT_TRANSPORT', 'MAIL_TRANSPORT'), 'auto')));
 }
+if (!defined('RESEND_API_KEY')) {
+    define('RESEND_API_KEY', (string) mailler_env(array('RESEND_API_KEY'), ''));
+}
+if (!defined('RESEND_API_URL')) {
+    define('RESEND_API_URL', (string) mailler_env(array('RESEND_API_URL'), 'https://api.resend.com/emails'));
+}
+if (!defined('RESEND_FROM_EMAIL')) {
+    define('RESEND_FROM_EMAIL', (string) mailler_env(array('RESEND_FROM_EMAIL'), 'onboarding@resend.dev'));
+}
+if (!defined('RESEND_FROM_NAME')) {
+    define('RESEND_FROM_NAME', (string) mailler_env(array('RESEND_FROM_NAME'), 'Mailler API'));
+}
 
 if (!defined('FALLBACK_SENDER')) {
     define('FALLBACK_SENDER', (string) mailler_env(array('FALLBACK_SENDER', 'MAIL_FROM'), 'no-reply@' . mailler_default_sender_domain()));

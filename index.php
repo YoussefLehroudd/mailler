@@ -11,7 +11,7 @@ if (empty($_SESSION['csrf_token'])) {
 
 $csrfToken = $_SESSION['csrf_token'];
 $delivery_mode = DEFAULT_TRANSPORT;
-if (!in_array($delivery_mode, array('auto', 'smtp', 'server'), true)) {
+if (!in_array($delivery_mode, array('auto', 'smtp', 'api', 'server'), true)) {
     $delivery_mode = 'auto';
 }
 
@@ -55,232 +55,656 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
     <title>PHP Mailer</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap');
+
+        :root {
+            --bg: #f4efe6;
+            --bg-accent: #dfeff2;
+            --surface: rgba(255, 255, 255, 0.92);
+            --surface-strong: #ffffff;
+            --surface-soft: #f6f8f6;
+            --line: rgba(13, 42, 52, 0.1);
+            --line-strong: rgba(13, 42, 52, 0.18);
+            --text: #13262f;
+            --muted: #60707a;
+            --accent: #0e7490;
+            --accent-2: #f97316;
+            --success: #14865f;
+            --danger: #c43d2f;
+            --shadow: 0 28px 60px rgba(19, 38, 47, 0.12);
+            --radius-xl: 28px;
+            --radius-lg: 20px;
+            --radius-md: 16px;
+            --radius-sm: 12px;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f8f9fa;
-            padding: 20px;
+            min-height: 100vh;
+            font-family: 'Space Grotesk', 'Trebuchet MS', sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(14, 116, 144, 0.18), transparent 28%),
+                radial-gradient(circle at top right, rgba(249, 115, 22, 0.16), transparent 24%),
+                linear-gradient(180deg, var(--bg) 0%, #fbfaf6 40%, var(--bg-accent) 100%);
+            padding: 24px;
+        }
+
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            border-radius: 999px;
+            filter: blur(8px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::before {
+            width: 220px;
+            height: 220px;
+            background: rgba(14, 116, 144, 0.08);
+            top: 14%;
+            left: -60px;
+        }
+
+        body::after {
+            width: 280px;
+            height: 280px;
+            background: rgba(249, 115, 22, 0.08);
+            right: -90px;
+            bottom: 12%;
         }
 
         .container {
-            max-width: 1200px;
+            position: relative;
+            z-index: 1;
+            max-width: 1380px;
             margin: 0 auto;
-            background: white;
-            border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 32px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
         }
 
         .header {
-            background: #fff;
-            padding: 15px 20px;
-            border-bottom: 1px solid #dee2e6;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            gap: 28px;
+            padding: 34px 38px;
+            cursor: pointer;
+            background:
+                linear-gradient(135deg, rgba(14, 116, 144, 0.12), rgba(255, 255, 255, 0.6)),
+                linear-gradient(120deg, rgba(249, 115, 22, 0.14), transparent 42%);
+            border-bottom: 1px solid rgba(19, 38, 47, 0.08);
         }
 
-        .header h3 {
-            color: #007bff;
-            font-size: 16px;
-            font-weight: 500;
-            margin: 0;
+        .header::after {
+            content: '';
+            position: absolute;
+            inset: auto 38px 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(19, 38, 47, 0.12), transparent);
+        }
+
+        .hero-copy {
+            max-width: 760px;
+        }
+
+        .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.74);
+            border: 1px solid rgba(14, 116, 144, 0.14);
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 18px;
+        }
+
+        .hero-kicker::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            box-shadow: 0 0 0 6px rgba(14, 116, 144, 0.08);
+        }
+
+        .hero-title {
+            font-size: clamp(2rem, 4vw, 3.3rem);
+            line-height: 1;
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            margin-bottom: 12px;
+        }
+
+        .hero-subtitle {
+            max-width: 60ch;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .hero-side {
+            display: grid;
+            align-content: space-between;
+            justify-items: end;
+            gap: 18px;
+            min-width: 230px;
+        }
+
+        .hero-badges {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(19, 38, 47, 0.08);
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .hero-badge strong {
+            color: var(--accent);
+            font-size: 13px;
+        }
+
+        .hero-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .hero-toggle::after {
+            content: 'Open guide';
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--accent), #0f9bbf);
+            color: #fff;
+            box-shadow: 0 14px 28px rgba(14, 116, 144, 0.18);
+        }
+
+        #instructionPanel {
+            padding: 26px 38px !important;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(246, 248, 246, 0.92)) !important;
+            border-bottom: 1px solid rgba(19, 38, 47, 0.08) !important;
         }
 
         .content {
-            padding: 20px;
+            padding: 34px 38px 38px;
+        }
+
+        .workspace-grid {
+            display: grid;
+            grid-template-columns: minmax(320px, 0.98fr) minmax(0, 1.12fr);
+            gap: 24px;
+            align-items: start;
         }
 
         .section {
-            background: #fff;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 20px;
-            margin-bottom: 20px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 249, 0.96));
+            border: 1px solid var(--line);
+            border-radius: var(--radius-xl);
+            padding: 26px;
+            margin-bottom: 24px;
+            box-shadow: 0 18px 34px rgba(19, 38, 47, 0.06);
+        }
+
+        .workspace-grid > .section {
+            height: 100%;
+            margin-bottom: 0;
         }
 
         .section-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #495057;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 22px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(19, 38, 47, 0.08);
+            letter-spacing: -0.02em;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 12px;
+            height: 12px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            box-shadow: 0 0 0 7px rgba(14, 116, 144, 0.08);
         }
 
         .two-column {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 24px;
         }
 
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 18px;
         }
 
         .form-group label {
             display: block;
-            font-size: 13px;
-            color: #495057;
-            margin-bottom: 5px;
-            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 9px;
+            font-weight: 700;
+        }
+
+        .section .form-group > div[style*="display: flex"] {
+            display: flex !important;
+            align-items: flex-start !important;
+            gap: 12px !important;
+            flex-wrap: wrap;
+        }
+
+        .section .form-group > div[style*="display: flex"] > label {
+            flex: 0 0 104px;
+            min-width: 104px !important;
+            margin: 14px 0 0 !important;
+            white-space: normal !important;
+        }
+
+        .section .form-group > div[style*="display: flex"] > .form-control,
+        .section .form-group > div[style*="display: flex"] > select.form-control,
+        .section .form-group > div[style*="display: flex"] > input.form-control {
+            flex: 1 1 240px;
+            width: auto !important;
+            min-width: 0;
         }
 
         .form-control {
             width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            font-size: 13px;
+            border: 1px solid rgba(19, 38, 47, 0.12);
+            border-radius: var(--radius-md);
+            background: rgba(255, 255, 255, 0.96);
+            color: var(--text);
+            min-height: 52px;
+            padding: 13px 16px;
+            font-size: 14px;
             font-family: inherit;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        }
+
+        .form-control::placeholder {
+            color: #97a5ac;
+        }
+
+        .form-control:hover {
+            border-color: rgba(14, 116, 144, 0.22);
         }
 
         .form-control:focus {
             outline: none;
-            border-color: #80bdff;
-            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+            border-color: rgba(14, 116, 144, 0.55);
+            box-shadow: 0 0 0 5px rgba(14, 116, 144, 0.12);
+            transform: translateY(-1px);
         }
 
         .form-control:disabled {
-            background: #e9ecef;
+            background: rgba(224, 230, 232, 0.78);
+            color: #809098;
+        }
+
+        select.form-control {
+            appearance: none;
+            background-image:
+                linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+            background-position:
+                calc(100% - 22px) calc(50% - 3px),
+                calc(100% - 16px) calc(50% - 3px);
+            background-size: 6px 6px, 6px 6px;
+            background-repeat: no-repeat;
+            padding-right: 44px;
         }
 
         textarea.form-control {
-            min-height: 100px;
+            min-height: 148px;
             resize: vertical;
+            line-height: 1.65;
         }
 
         .checkbox-inline {
             display: inline-flex;
             align-items: center;
-            gap: 5px;
-            margin-right: 15px;
+            gap: 9px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(250, 250, 249, 0.96);
+            border: 1px solid rgba(19, 38, 47, 0.1);
+            margin-right: 10px;
+            margin-bottom: 10px;
         }
 
         .checkbox-inline input {
             margin: 0;
+            accent-color: var(--accent);
         }
 
         .checkbox-inline label {
             margin: 0;
-            font-weight: normal;
+            font-size: 13px;
+            color: var(--text);
+            font-weight: 600;
+            text-transform: none;
+            letter-spacing: normal;
             cursor: pointer;
         }
 
         .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            min-height: 48px;
+            padding: 12px 18px;
+            border: 0;
+            border-radius: 999px;
+            font-family: inherit;
             font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
             cursor: pointer;
-            font-weight: 500;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+            box-shadow: 0 14px 26px rgba(19, 38, 47, 0.12);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
         }
 
         .btn-primary {
-            background: #007bff;
+            background: linear-gradient(135deg, var(--accent), #0f9bbf);
             color: white;
-        }
-
-        .btn-primary:hover {
-            background: #0056b3;
         }
 
         .btn-success {
-            background: #28a745;
+            background: linear-gradient(135deg, var(--success), #1aa36f);
             color: white;
-        }
-
-        .btn-success:hover {
-            background: #218838;
         }
 
         .btn-danger {
-            background: #dc3545;
+            background: linear-gradient(135deg, var(--danger), #da604a);
             color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c82333;
         }
 
         .btn-danger:disabled {
-            background: #f8d7da;
-            color: #721c24;
-            opacity: 0.6;
+            background: linear-gradient(135deg, #f0b5ad, #e7cdc7);
+            color: #6f2d24;
+            opacity: 0.75;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
 
         .btn-info {
-            background: #17a2b8;
+            background: linear-gradient(135deg, #0f172a, #2a415e);
             color: white;
-        }
-
-        .btn-info:hover {
-            background: #138496;
-        }
-
-        .smtp-list {
-            background: #f8f9fa;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            padding: 10px;
-            min-height: 80px;
-            max-height: 150px;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 12px;
-            white-space: pre-wrap;
-            color: #495057;
         }
 
         .inline-group {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 14px;
+            background: rgba(248, 250, 249, 0.94);
+            border: 1px solid rgba(19, 38, 47, 0.08);
+            border-radius: var(--radius-md);
+        }
+
+        .inline-group label {
+            min-width: 138px;
+            margin: 0 !important;
         }
 
         .inline-group input[type="text"],
+        .inline-group input[type="number"],
         .inline-group select {
+            flex: 1 1 110px;
+            min-width: 92px;
             width: auto;
         }
 
         .inline-group span {
-            font-size: 13px;
-            color: #6c757d;
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
-        .result-box {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 15px;
-            min-height: 200px;
-            max-height: 400px;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 12px;
-            white-space: pre-wrap;
-            word-break: break-word;
+        #instructionPanel ul {
+            list-style: none;
+        }
+
+        #instructionPanel strong {
+            color: var(--text);
+        }
+
+        #instructionPanel a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        #instructionPanel a:hover {
+            text-decoration: underline;
+        }
+
+        #instructionPanel > div,
+        #instructionPanel > ul {
+            max-width: 980px;
+        }
+
+        #instructionPanel > div[style*="padding-top"] {
+            margin-top: 18px !important;
+            padding-top: 18px !important;
+            border-top: 1px solid rgba(19, 38, 47, 0.08) !important;
         }
 
         .help-text {
-            font-size: 12px;
-            color: #6c757d;
-            margin-top: 6px;
+            font-size: 13px;
+            color: var(--muted);
+            margin-top: 8px;
+            line-height: 1.6;
         }
 
-        @media (max-width: 768px) {
+        .result-box {
+            background:
+                linear-gradient(180deg, rgba(9, 17, 20, 0.98), rgba(16, 23, 28, 0.98)),
+                linear-gradient(180deg, rgba(14, 116, 144, 0.08), transparent);
+            border: 1px solid rgba(77, 111, 124, 0.36);
+            border-radius: 22px;
+            padding: 22px;
+            min-height: 240px;
+            max-height: 460px;
+            overflow-y: auto;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            color: #dffbe8;
+            white-space: pre-wrap;
+            word-break: break-word;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        #my_smtp {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            background: linear-gradient(180deg, #fbfcfc, #f4f8f9);
+        }
+
+        #countEmails,
+        #countSmtp {
+            min-width: 54px;
+            padding-inline: 18px !important;
+        }
+
+        input[type="file"].form-control {
+            padding: 10px 12px;
+        }
+
+        @media (max-width: 1160px) {
+            .workspace-grid,
             .two-column {
                 grid-template-columns: 1fr;
+            }
+
+            .hero-side {
+                justify-items: start;
+            }
+
+            .hero-badges {
+                justify-content: flex-start;
+            }
+        }
+
+        @media (max-width: 780px) {
+            body {
+                padding: 14px;
+            }
+
+            .header,
+            #instructionPanel,
+            .content {
+                padding-left: 20px !important;
+                padding-right: 20px !important;
+            }
+
+            .header {
+                padding-top: 24px;
+                padding-bottom: 24px;
+                flex-direction: column;
+            }
+
+            .hero-title {
+                font-size: 2.2rem;
+            }
+
+            .hero-toggle::after {
+                content: 'Guide';
+            }
+
+            .section {
+                padding: 20px;
+                border-radius: 22px;
+            }
+
+            .section .form-group > div[style*="display: flex"] > label {
+                flex: 1 1 100%;
+                min-width: 100% !important;
+                margin-top: 0 !important;
+            }
+
+            .section .form-group > div[style*="display: flex"] > .form-control,
+            .section .form-group > div[style*="display: flex"] > select.form-control,
+            .section .form-group > div[style*="display: flex"] > input.form-control {
+                flex-basis: 100%;
+                width: 100% !important;
+            }
+
+            .inline-group {
+                align-items: stretch;
+            }
+
+            .inline-group label,
+            .inline-group span {
+                width: 100%;
+                min-width: 100%;
+            }
+
+            .btn:not(#countEmails):not(#countSmtp) {
+                width: 100%;
+            }
+
+            .form-group .btn + .btn {
+                margin-top: 10px;
+                margin-left: 0 !important;
+            }
+
+            .checkbox-inline {
+                width: 100%;
+                justify-content: flex-start;
+            }
+        }
+
+        @media (max-width: 520px) {
+            .hero-kicker,
+            .hero-badge {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .result-box {
+                min-height: 220px;
+                padding: 18px;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header" style="cursor: pointer;" onclick="toggleInstruction()">
-            <h3 style="color: #007bff;">Instruction</h3>
+        <div class="header" onclick="toggleInstruction()">
+            <div class="hero-copy">
+                <span class="hero-kicker">Responsive Mail Console</span>
+                <h1 class="hero-title">Mailler Workspace</h1>
+                <p class="hero-subtitle">
+                    Une interface plus propre pour piloter SMTP, API delivery, sender identity, attachments,
+                    and live sending logs from one Railway-ready dashboard.
+                </p>
+            </div>
+            <div class="hero-side">
+                <div class="hero-badges">
+                    <span class="hero-badge"><strong>4</strong> modes</span>
+                    <span class="hero-badge"><strong>Live</strong> logs</span>
+                    <span class="hero-badge"><strong>100%</strong> responsive</span>
+                </div>
+                <span class="hero-toggle">Click anywhere here to toggle the guide</span>
+            </div>
         </div>
         
         <!-- INSTRUCTION PANEL -->
@@ -343,6 +767,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
             <form method="post" action="" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" id="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                 
+                <div class="workspace-grid">
                 <!-- SERVER SETUP -->
                 <div class="section">
                     <div class="section-title">Server Setup</div>
@@ -352,10 +777,11 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                             <select name="delivery_mode" id="delivery_mode" class="form-control" style="max-width: 280px;">
                                 <option value="auto" <?php if($delivery_mode === 'auto') echo 'selected'; ?>>Auto</option>
                                 <option value="smtp" <?php if($delivery_mode === 'smtp') echo 'selected'; ?>>SMTP only</option>
+                                <option value="api" <?php if($delivery_mode === 'api') echo 'selected'; ?>>API (Resend)</option>
                                 <option value="server" <?php if($delivery_mode === 'server') echo 'selected'; ?>>Server mail only</option>
                             </select>
                         </div>
-                        <div class="help-text" id="deliveryHint">Auto uses SMTP when available, otherwise it falls back to server mail.</div>
+                        <div class="help-text" id="deliveryHint">Auto uses SMTP when available, then Resend API if configured, then server mail.</div>
                     </div>
                     
                     <div class="two-column">
@@ -652,6 +1078,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
                         </div>
                     </div>
                 </div>
+                </div>
 
                 <!-- RESULT -->
                 <div class="section" id="resultSection" style="display: none;">
@@ -726,11 +1153,13 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 
             function updateDeliveryModeState() {
                 var mode = $('#delivery_mode').val() || defaultDeliveryMode;
-                var forceManualSender = mode === 'server';
-                var hint = 'Auto uses SMTP when available, otherwise it falls back to server mail.';
+                var forceManualSender = mode === 'server' || mode === 'api';
+                var hint = 'Auto uses SMTP when available, then Resend API if configured, then server mail.';
 
                 if (mode === 'smtp') {
                     hint = 'SMTP only uses your SMTP list first, then environment SMTP when it is configured on Railway.';
+                } else if (mode === 'api') {
+                    hint = 'API mode sends through Resend with RESEND_API_KEY. This is the recommended non-SMTP option on Railway.';
                 } else if (mode === 'server') {
                     hint = 'Server mail uses PHP mail()/local mail transport. On Railway this only works when the runtime supports mail sending.';
                 }

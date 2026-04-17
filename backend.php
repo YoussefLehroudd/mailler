@@ -77,7 +77,7 @@ $reading=false;
 $repaslog=false;
 $uploadfile="";
 $delivery_mode = DEFAULT_TRANSPORT;
-if(!in_array($delivery_mode, array('auto', 'smtp', 'server'), true)) {
+if(!in_array($delivery_mode, array('auto', 'smtp', 'api', 'server'), true)) {
     $delivery_mode = 'auto';
 }
 
@@ -109,7 +109,7 @@ if(!empty($_POST)) {
     $encodety = isset($_POST['encodety']) ? $_POST['encodety'] : 'no';
     if(isset($_POST['delivery_mode'])) {
         $delivery_mode = strtolower(lrtrim($_POST['delivery_mode']));
-        if(!in_array($delivery_mode, array('auto', 'smtp', 'server'), true)) {
+        if(!in_array($delivery_mode, array('auto', 'smtp', 'api', 'server'), true)) {
             $delivery_mode = 'auto';
         }
     }
@@ -5258,6 +5258,135 @@ function applyTrustedMailSettings($mail, $fromEmail)
     }
 }
 
+function formatFriendlyFromAddress($email, $name = '')
+{
+    $email = sanitizeEmailAddress($email);
+    $name = sanitizeDisplayName($name);
+
+    if ($email === '') {
+        return '';
+    }
+
+    if ($name === '') {
+        return $email;
+    }
+
+    return $name . ' <' . $email . '>';
+}
+
+function buildApiAttachments($path, $filename = '')
+{
+    $attachments = array();
+    $path = (string) $path;
+    if ($path === '' || !is_file($path)) {
+        return $attachments;
+    }
+
+    $maxBytes = max(1, (int) MAX_ATTACHMENT_SIZE_MB) * 1024 * 1024;
+    $fileSize = filesize($path);
+    if ($fileSize === false || $fileSize > $maxBytes) {
+        return $attachments;
+    }
+
+    $content = file_get_contents($path);
+    if ($content === false) {
+        return $attachments;
+    }
+
+    $mimeType = function_exists('mime_content_type') ? mime_content_type($path) : 'application/octet-stream';
+    if (!is_string($mimeType) || $mimeType === '') {
+        $mimeType = 'application/octet-stream';
+    }
+
+    $attachments[] = array(
+        'filename' => $filename !== '' ? $filename : basename($path),
+        'content' => base64_encode($content),
+        'content_type' => $mimeType,
+    );
+
+    return $attachments;
+}
+
+function resendApiRequest($payload, $idempotencyKey)
+{
+    $payloadJson = json_encode($payload);
+    if ($payloadJson === false) {
+        return array('ok' => false, 'error' => 'Failed to encode Resend payload.', 'status' => 0);
+    }
+
+    $headers = array(
+        'Authorization: Bearer ' . RESEND_API_KEY,
+        'Content-Type: application/json',
+        'Idempotency-Key: ' . $idempotencyKey,
+    );
+
+    $responseBody = '';
+    $statusCode = 0;
+
+    if (function_exists('curl_init')) {
+        $ch = curl_init(RESEND_API_URL);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payloadJson);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, max(5, (int) $GLOBALS['smtp_timeout']));
+        curl_setopt($ch, CURLOPT_TIMEOUT, max(10, (int) $GLOBALS['smtp_timeout']));
+        $responseBody = curl_exec($ch);
+        if ($responseBody === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            return array('ok' => false, 'error' => 'cURL error: ' . $error, 'status' => 0);
+        }
+        $statusCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        curl_close($ch);
+    } else {
+        $context = stream_context_create(array(
+            'http' => array(
+                'method' => 'POST',
+                'header' => implode("\r\n", $headers),
+                'content' => $payloadJson,
+                'timeout' => max(10, (int) $GLOBALS['smtp_timeout']),
+                'ignore_errors' => true,
+            ),
+        ));
+        $responseBody = @file_get_contents(RESEND_API_URL, false, $context);
+        if ($responseBody === false) {
+            return array('ok' => false, 'error' => 'HTTP request failed while contacting Resend.', 'status' => 0);
+        }
+        if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $matches)) {
+            $statusCode = (int) $matches[1];
+        }
+    }
+
+    $decoded = json_decode((string) $responseBody, true);
+    if ($statusCode >= 200 && $statusCode < 300) {
+        return array(
+            'ok' => true,
+            'status' => $statusCode,
+            'id' => is_array($decoded) && isset($decoded['id']) ? $decoded['id'] : '',
+            'body' => $decoded,
+        );
+    }
+
+    $errorMessage = 'Unexpected Resend API error.';
+    if (is_array($decoded)) {
+        if (!empty($decoded['message']) && is_string($decoded['message'])) {
+            $errorMessage = $decoded['message'];
+        } elseif (!empty($decoded['error']) && is_string($decoded['error'])) {
+            $errorMessage = $decoded['error'];
+        }
+    } elseif (is_string($responseBody) && trim($responseBody) !== '') {
+        $errorMessage = trim($responseBody);
+    }
+
+    return array(
+        'ok' => false,
+        'status' => $statusCode,
+        'error' => $errorMessage,
+        'body' => $decoded,
+    );
+}
+
 // REPLACE LAST OCCURENCE OF STRING
 function str_lreplace($search, $replace, $subject)
 {
@@ -5463,11 +5592,14 @@ function switch_smtp()
 			$qx=1;
 			$rotation_counter=0; // Counter for SMTP rotation
 			$serverMailFallbackAllowed = false;
+			$apiFallbackAllowed = false;
 			$envSmtpLine = buildConfiguredSmtpLine();
 			if(count($allsmtps) === 0 && !empty($envSmtpLine)) {
 				$allsmtps[] = $envSmtpLine;
 			}
 			$hasSmtpTransport = count($allsmtps) > 0;
+			$hasApiTransport = RESEND_API_KEY !== '';
+			$transportType = 'server';
 			
 			if(!empty($epriority))
 				$mail->Priority = "$epriority";
@@ -5486,9 +5618,24 @@ function switch_smtp()
 				logLine('[INFO] Add SMTP in the form or set SMTP_HOST / SMTP_USER / SMTP_PASS in Railway variables.');
 				exit;
 			}
+			if($delivery_mode === 'api' && !$hasApiTransport) {
+				logLine('[ERROR] API mode selected but RESEND_API_KEY is missing.');
+				logLine('[INFO] Add RESEND_API_KEY in Railway variables to send without SMTP.');
+				exit;
+			}
 
-			if($delivery_mode === 'server')
+			if($delivery_mode === 'api')
 			{
+				$transportType = 'api';
+				logLine('[INFO] Transport: Resend API');
+				if($isbcc) {
+					logLine('[WARN] BCC batching is disabled in API mode. Emails will be sent individually.');
+					$isbcc = false;
+				}
+			}
+			else if($delivery_mode === 'server')
+			{
+				$transportType = 'server';
 				$mail->SMTPAuth = false;
 				$mail->IsMail();
 				$default_system="1";
@@ -5499,17 +5646,32 @@ function switch_smtp()
 			}
 			else if($hasSmtpTransport)
 			{
+				$transportType = 'smtp';
 				$mail->IsSMTP();
 				$mail->SMTPKeepAlive = true;
 				$mail->SMTPAuth = true;
 				switch_smtp();
 				logLine('[INFO] Transport: SMTP' . (!empty($mail->Host) ? ' (' . $mail->Host . ')' : ''));
 				if($delivery_mode === 'auto') {
-					$serverMailFallbackAllowed = true;
+					$apiFallbackAllowed = $hasApiTransport;
+					$serverMailFallbackAllowed = !$hasApiTransport;
+				}
+				if($delivery_mode === 'auto' && $hasApiTransport) {
+					logLine('[INFO] Auto fallback ready: Resend API');
+				}
+			}
+			else if($hasApiTransport)
+			{
+				$transportType = 'api';
+				logLine('[INFO] Transport: Resend API (auto fallback)');
+				if($isbcc) {
+					logLine('[WARN] BCC batching is disabled in API mode. Emails will be sent individually.');
+					$isbcc = false;
 				}
 			}
 			else
 			{
+				$transportType = 'server';
 				$mail->SMTPAuth = false;
 				$mail->IsMail();
 				$default_system="1";
@@ -5589,11 +5751,16 @@ function switch_smtp()
 				}
 			}
 			$from = sanitizeEmailAddress($from);
+			if($from === '' && $transportType === 'api') {
+				$from = sanitizeEmailAddress(RESEND_FROM_EMAIL);
+			}
 			if($from === '') {
 				$from = sanitizeEmailAddress(FALLBACK_SENDER);
 			}
 			$mail->From = $from;
-			applyTrustedMailSettings($mail, $from);
+			if($transportType !== 'api') {
+				applyTrustedMailSettings($mail, $from);
+			}
 			#$mail->addCustomHeader('List-Unsubscribe',preg_replace_callback('/(##([a-zA-Z0-9\-]+)\{([0-9]+)\}##)/', "generateRandomString", 'mailto:bounce##09-{3}##-##az-AZ-09-{15}##@'.explode('@',$from)[1].'?subject=list-unsubscribe'));
 			// SET DEBUG LVL
 			$mail->SMTPDebug = $debg;
@@ -5605,6 +5772,7 @@ function switch_smtp()
 			else $mail->ConfirmReadingTo = '';
 			// SET ENCODING TYPE
 			if($encodety !="no") $mail->Encoding = $encodety;
+			$apiAttachments = array();
 			// ADD ATTACH
 			if (array_key_exists('userfile', $_FILES)) 
 			{
@@ -5615,6 +5783,10 @@ function switch_smtp()
 				if (move_uploaded_file($_FILES['userfile']['tmp_name'], $uploadfile)) 
 				{
 					$mail->addAttachment($uploadfile,$_FILES['userfile']['name']);
+					$apiAttachments = buildApiAttachments($uploadfile, $_FILES['userfile']['name']);
+					if(empty($apiAttachments) && $transportType === 'api') {
+						logLine('[WARN] Attachment was skipped for API transport. Check file size and file readability.');
+					}
 				}
 			}
 			for($x=1; $x<=$numemails; $x++)
@@ -5706,8 +5878,20 @@ function switch_smtp()
 					$message = stripslashes($message);
 					$subject = normalizeHeaderValue(stripslashes($subject));
 					$realname = sanitizeDisplayName($realname);
+					$rawSubject = $subject;
+					$rawRealname = $realname;
+					$from = sanitizeEmailAddress($from);
+					if($from === '' && $transportType === 'api') {
+						$from = sanitizeEmailAddress(RESEND_FROM_EMAIL);
+						if($from !== '') {
+							logLine('[WARN] Sender email adjusted to ' . $from . ' for API transport.');
+						}
+					}
+					if($from === '') {
+						$from = sanitizeEmailAddress(FALLBACK_SENDER);
+					}
 
-                    if ($encodety != "no") 
+                    if ($encodety != "no" && $transportType !== 'api') 
 					{
 						$subject = "=?UTF-8?B?".base64_encode($subject)."?=";
 						// Append trusted icon before encoding the sender name
@@ -5716,14 +5900,50 @@ function switch_smtp()
 						$realname = "=?UTF-8?B?".base64_encode($realname_with_icon)."?=";
 					}
 
-				// Set the encoded sender name with icon
+				$mail->From = $from;
+				if($transportType !== 'api') {
+					applyTrustedMailSettings($mail, $from);
+				}
 				$mail->FromName = $realname;
 				$mail->Subject = "$subject";
 				$mail->Body = "$message";
 				$mail->AltBody = strip_tags_content($message);
 				
 				// SENDING AND TESTING
-                    if (!$mail->Send()) {
+                    if ($transportType === 'api') {
+						$payload = array(
+							'from' => formatFriendlyFromAddress($from, $rawRealname !== '' ? $rawRealname : RESEND_FROM_NAME),
+							'to' => array($to),
+							'subject' => $rawSubject,
+							'headers' => array(
+								'X-Auto-Response-Suppress' => 'All',
+							),
+						);
+
+						if($contenttype == "html") {
+							$payload['html'] = $message;
+							$payload['text'] = strip_tags_content($message);
+						} else {
+							$payload['text'] = $message;
+						}
+
+						if(!empty($replyto)) {
+							$payload['reply_to'] = $replyto;
+						}
+
+						if(!empty($apiAttachments)) {
+							$payload['attachments'] = $apiAttachments;
+						}
+
+						$idempotencyKey = sha1($from . '|' . $to . '|' . $rawSubject . '|' . $x . '|' . microtime(true));
+						$apiResult = resendApiRequest($payload, $idempotencyKey);
+						if(!$apiResult['ok']) {
+							logLine('FAILED');
+							logLine('[Resend API Error: ' . $apiResult['error'] . ']');
+						} else {
+							logLine('EMAIL SENT SUCCESSFULLY' . (!empty($apiResult['id']) ? ' [Resend ID: ' . $apiResult['id'] . ']' : ''));
+						}
+                    } else if (!$mail->Send()) {
                         // Get detailed error info
                         $errInfo   = trim($mail->ErrorInfo);
                         $smtpErr   = '';
@@ -5755,7 +5975,42 @@ function switch_smtp()
                             ($txId ? ' [Transaction ID: ' . $txId . ']' : '')
                         );
 
-                        if ($default_system == "1" || $serverMailFallbackAllowed) {
+                        if ($apiFallbackAllowed) {
+                            logLine('[WARN] SMTP failed in auto mode. Trying Resend API fallback.');
+
+							$payload = array(
+								'from' => formatFriendlyFromAddress(
+									sanitizeEmailAddress(RESEND_FROM_EMAIL) !== '' ? sanitizeEmailAddress(RESEND_FROM_EMAIL) : $from,
+									$rawRealname !== '' ? $rawRealname : RESEND_FROM_NAME
+								),
+								'to' => array($to),
+								'subject' => $rawSubject,
+								'headers' => array(
+									'X-Auto-Response-Suppress' => 'All',
+								),
+							);
+							if($contenttype == "html") {
+								$payload['html'] = $message;
+								$payload['text'] = strip_tags_content($message);
+							} else {
+								$payload['text'] = $message;
+							}
+							if(!empty($replyto)) {
+								$payload['reply_to'] = $replyto;
+							}
+							if(!empty($apiAttachments)) {
+								$payload['attachments'] = $apiAttachments;
+							}
+
+							$idempotencyKey = sha1('api-fallback|' . $to . '|' . $rawSubject . '|' . $x . '|' . microtime(true));
+							$apiResult = resendApiRequest($payload, $idempotencyKey);
+							if(!$apiResult['ok']) {
+								logLine('FAILED');
+								logLine('[Resend API Error: ' . $apiResult['error'] . ']');
+							} else {
+								logLine('EMAIL SENT SUCCESSFULLY' . (!empty($apiResult['id']) ? ' [Resend ID: ' . $apiResult['id'] . ']' : ''));
+							}
+                        } else if ($default_system == "1" || $serverMailFallbackAllowed) {
                             if ($serverMailFallbackAllowed) {
                                 logLine('[WARN] SMTP failed in auto mode. Trying server mail fallback.');
                                 $mail->smtpClose();
@@ -5784,7 +6039,7 @@ function switch_smtp()
 				//END//
 				
 				// SMTP IP ROTATION  NB: 1 BCC = 1 EMAIL
-					if(intval($nrotat) > 0 && count($allsmtps) > 1 && $send)
+					if($transportType === 'smtp' && intval($nrotat) > 0 && count($allsmtps) > 1 && $send)
 					{
 						$rotation_counter++;
 						$should_rotate = false;
