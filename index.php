@@ -267,9 +267,11 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
 
         .workspace-grid {
             display: grid;
-            grid-template-columns: minmax(320px, 0.98fr) minmax(0, 1.12fr);
+            grid-template-columns: minmax(0, 1fr);
             gap: 24px;
             align-items: start;
+            max-width: 1120px;
+            margin: 0 auto 24px;
         }
 
         .section {
@@ -282,7 +284,7 @@ if(!empty($_POST['action']) && $_POST['action'] == 'send') {
         }
 
         .workspace-grid > .section {
-            height: 100%;
+            height: auto;
             margin-bottom: 0;
         }
 
